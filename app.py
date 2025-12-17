@@ -4,10 +4,7 @@ import streamlit as st
 from langchain_community.vectorstores import FAISS
 from langchain_community.document_loaders import TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-
-from langchain_openai import OpenAIEmbeddings, ChatOpenAI
-from langchain_core.prompts import PromptTemplate
-from langchain_core.output_parsers import StrOutputParser
+from langchain_community.embeddings import HuggingFaceEmbeddings
 
 
 # =========================================
@@ -41,15 +38,27 @@ st.markdown(
 # =========================================
 # PATHS (CLOUD SAFE)
 # =========================================
-DATA_DIR = "data"                 # READ from repo
-INDEX_PATH = "/tmp/faiss_index"   # WRITE to temp (allowed)
+DATA_DIR = "data"                  # read-only
+INDEX_PATH = "/tmp/faiss_index"    # writable on Streamlit Cloud
+
+
+# =========================================
+# EMBEDDINGS (100% FREE)
+# =========================================
+@st.cache_resource
+def get_embeddings():
+    return HuggingFaceEmbeddings(
+        model_name="sentence-transformers/all-MiniLM-L6-v2"
+    )
 
 
 # =========================================
 # FUNCTIONS
 # =========================================
-
 def build_faiss_index():
+    if not os.path.exists(DATA_DIR):
+        return False
+
     files = [f for f in os.listdir(DATA_DIR) if f.endswith(".txt")]
     if not files:
         return False
@@ -60,22 +69,22 @@ def build_faiss_index():
         documents.extend(loader.load())
 
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1200,
-        chunk_overlap=200
+        chunk_size=800,
+        chunk_overlap=100
     )
     chunks = splitter.split_documents(documents)
 
-    embeddings = OpenAIEmbeddings()
+    embeddings = get_embeddings()
     vector_store = FAISS.from_documents(chunks, embeddings)
-
     vector_store.save_local(INDEX_PATH)
+
     return True
 
 
 def load_index():
     if not os.path.exists(INDEX_PATH):
         return None
-    embeddings = OpenAIEmbeddings()
+    embeddings = get_embeddings()
     return FAISS.load_local(
         INDEX_PATH,
         embeddings,
@@ -83,34 +92,12 @@ def load_index():
     )
 
 
-def rag_query(question):
+def search_docs(question):
     index = load_index()
     if index is None:
-        return "Index missing. Please rebuild the index."
+        return []
 
-    docs = index.similarity_search(question, k=5)
-    context = "\n\n".join(d.page_content for d in docs)
-
-    prompt = PromptTemplate.from_template("""
-You are an internal knowledge assistant.
-Use ONLY the context below to answer.
-
-CONTEXT:
-{context}
-
-QUESTION:
-{question}
-
-ANSWER:
-""")
-
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
-    chain = prompt | llm | StrOutputParser()
-
-    return chain.invoke({
-        "context": context,
-        "question": question
-    })
+    return index.similarity_search(question, k=5)
 
 
 # =========================================
@@ -136,7 +123,6 @@ st.markdown(f"""
 # =========================================
 # MAIN UI
 # =========================================
-
 if mode == "General":
     st.subheader("Ask your internal question")
 
@@ -148,22 +134,27 @@ if mode == "General":
         elif not question.strip():
             st.warning("Please enter a question.")
         else:
-            answer = rag_query(question)
-            st.markdown(
-                f"""
-                <div style='background:#F7F7F7; padding:15px;
-                border-radius:8px; border:1px solid #DDD; margin-top:15px;'>
-                    <b>Answer:</b><br>{answer}
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
+            docs = search_docs(question)
+
+            if not docs:
+                st.info("No relevant content found.")
+            else:
+                context = "\n\n".join(d.page_content for d in docs)
+                st.markdown(
+                    f"""
+                    <div style='background:#F7F7F7; padding:15px;
+                    border-radius:8px; border:1px solid #DDD; margin-top:15px;'>
+                        <b>Relevant content:</b><br>{context}
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
 
     if st.button("Rebuild Index"):
-        with st.spinner("Rebuilding FAISS index..."):
+        with st.spinner("Building free FAISS index..."):
             success = build_faiss_index()
             if success:
-                st.success("Index rebuilt successfully! You can now ask questions.")
+                st.success("Index built successfully! Please refresh the page.")
             else:
                 st.error("No .txt files found in data folder.")
 
