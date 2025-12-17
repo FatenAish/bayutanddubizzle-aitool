@@ -17,13 +17,18 @@ st.set_page_config(
     layout="wide"
 )
 
-# Make the app feel centered (and keep buttons centered)
+# UI polish + center + fix button wrap/height
 st.markdown(
     """
     <style>
       .block-container { max-width: 980px; padding-top: 2rem; }
-      /* tighten button spacing a bit */
-      div[data-testid="stForm"] button { width: 100%; }
+
+      /* Make buttons same height + no wrapping */
+      div[data-testid="stForm"] button {
+        width: 100%;
+        height: 42px;
+        white-space: nowrap;
+      }
     </style>
     """,
     unsafe_allow_html=True
@@ -37,7 +42,7 @@ if "chat" not in st.session_state:
 
 
 # =========================================
-# SIDEBAR (RESTORED)
+# SIDEBAR
 # =========================================
 with st.sidebar:
     st.header("Select an option")
@@ -69,7 +74,7 @@ INDEX_PATH = "/tmp/faiss_index"
 
 
 # =========================================
-# EMBEDDINGS (FAST + CACHED)
+# EMBEDDINGS (CACHED)
 # =========================================
 @st.cache_resource
 def get_embeddings():
@@ -79,16 +84,16 @@ def get_embeddings():
 
 
 # =========================================
-# LLM (CACHED)
+# LLM (FASTER)
 # =========================================
 @st.cache_resource
 def get_llm():
-    # Keep generation short for speed
+    # 🔥 Much faster than flan-t5-base on Streamlit CPU
     pipe = pipeline(
         "text2text-generation",
-        model="google/flan-t5-base",
-        max_new_tokens=256,
-        temperature=0,
+        model="google/flan-t5-small",
+        max_new_tokens=128,   # 🔥 faster
+        temperature=0
     )
     return HuggingFacePipeline(pipeline=pipe)
 
@@ -100,7 +105,6 @@ def get_llm():
 def load_or_build_index():
     embeddings = get_embeddings()
 
-    # Load if exists
     if os.path.exists(INDEX_PATH):
         return FAISS.load_local(
             INDEX_PATH,
@@ -108,7 +112,6 @@ def load_or_build_index():
             allow_dangerous_deserialization=True
         )
 
-    # Build if missing
     if not os.path.exists(DATA_DIR):
         return None
 
@@ -136,11 +139,11 @@ index = load_or_build_index()
 
 
 # =========================================
-# SMART ANSWER (NO CRASH)
+# ANSWER CACHE (repeat Q = instant)
 # =========================================
-def generate_answer(question, docs):
+@st.cache_data(show_spinner=False)
+def cached_llm_answer(question: str, context: str) -> str:
     llm = get_llm()
-    context = "\n".join(d.page_content for d in docs)
 
     prompt = f"""
 You are an internal Bayut & Dubizzle assistant.
@@ -160,23 +163,29 @@ Question:
 Answer:
 """.strip()
 
-    # ✅ Fix TypeError: use invoke (LangChain versions differ)
+    # ✅ Fix TypeError across LangChain versions
     try:
         result = llm.invoke(prompt)
     except Exception:
-        # fallback if invoke is not available
         result = llm(prompt) if callable(llm) else str(llm)
 
     # Normalize output
     if isinstance(result, list):
-        # sometimes transformers returns [{"generated_text": "..."}]
         if result and isinstance(result[0], dict) and "generated_text" in result[0]:
-            return result[0]["generated_text"]
-        return str(result[0])
+            return result[0]["generated_text"].strip()
+        return str(result[0]).strip()
+
     if isinstance(result, dict) and "generated_text" in result:
-        return result["generated_text"]
+        return result["generated_text"].strip()
 
     return str(result).strip()
+
+
+def generate_answer(question, docs):
+    # 🔥 Smaller context = faster
+    context = "\n".join(d.page_content for d in docs)
+    context = context[:2500]  # cap context length for speed
+    return cached_llm_answer(question, context)
 
 
 # =========================================
@@ -185,12 +194,11 @@ Answer:
 if mode == "General":
     st.subheader("Ask your internal question")
 
-    # Form = Enter submits
     with st.form("ask_form", clear_on_submit=True):
         question = st.text_input("Question", placeholder="Type your question and press Enter…")
 
-        # Center Ask + Clear beside each other
-        left, b1, b2, right = st.columns([4, 1.2, 1.2, 4])
+        # ✅ Centered buttons, wider columns so text doesn't wrap
+        left, b1, b2, right = st.columns([5, 2, 2, 5])
 
         with b1:
             ask = st.form_submit_button("Ask")
@@ -209,13 +217,13 @@ if mode == "General":
             st.error("Index not available. Make sure there are .txt files inside /data.")
         else:
             with st.spinner("Thinking..."):
-                docs = index.similarity_search(question, k=3)  # fewer docs = faster
+                # 🔥 fewer docs = faster
+                docs = index.similarity_search(question, k=2)
                 answer = generate_answer(question, docs)
 
             st.session_state.chat.append({"q": question, "a": answer})
             st.rerun()
 
-    # Chat history
     for item in reversed(st.session_state.chat):
         st.markdown(
             f"""
