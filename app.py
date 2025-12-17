@@ -12,72 +12,6 @@ from langchain_community.llms import HuggingFacePipeline
 from transformers import pipeline
 
 
-# =========================================================
-# 🔒 AUTH CONFIG CHECK (prevents StreamlitAuthError crash)
-# =========================================================
-_auth = st.secrets.get("auth", {})
-AUTH_CONFIGURED = all(
-    k in _auth and str(_auth.get(k, "")).strip()
-    for k in ["redirect_uri", "cookie_secret", "client_id", "client_secret", "server_metadata_url"]
-)
-
-ALLOWED_EMAILS = set(_auth.get("allowed_emails", []))
-ALLOWED_DOMAINS = set(d.lower() for d in _auth.get("allowed_domains", []))
-
-def show_auth_setup_message():
-    st.markdown(
-        """
-        <h2 style="margin-bottom:0.25rem;">Auth is not configured</h2>
-        <p style="color:#666; margin-top:0;">
-          You clicked Sign in, but Streamlit auth credentials are missing.
-        </p>
-
-        <b>Fix:</b>
-        <ol>
-          <li>Add <code>Authlib&gt;=1.3.2</code> to <code>requirements.txt</code></li>
-          <li>On Streamlit Cloud: Manage app → Settings → Secrets</li>
-          <li>Add an <code>[auth]</code> block with: <code>redirect_uri</code>, <code>cookie_secret</code>,
-              <code>client_id</code>, <code>client_secret</code>, <code>server_metadata_url</code></li>
-          <li>Set Google OAuth “Authorized redirect URI” to:
-              <code>https://YOUR-APP.streamlit.app/oauth2callback</code></li>
-        </ol>
-        """,
-        unsafe_allow_html=True
-    )
-
-def show_login_page():
-    st.markdown(
-        """
-        <h2 style="margin-bottom:0.25rem;">Private app</h2>
-        <p style="color:#666; margin-top:0;">
-            Please sign in with your allowed email to continue.
-        </p>
-        """,
-        unsafe_allow_html=True
-    )
-    if not AUTH_CONFIGURED:
-        show_auth_setup_message()
-        st.stop()
-
-    st.button("Sign in", on_click=st.login)
-
-# Not logged in -> show login page
-if not getattr(st.user, "is_logged_in", False):
-    show_login_page()
-    st.stop()
-
-# Logged in -> check allowlist
-email = (getattr(st.user, "email", "") or "").lower()
-domain = email.split("@")[-1] if "@" in email else ""
-
-allowed = (email in ALLOWED_EMAILS) or (domain in ALLOWED_DOMAINS)
-
-if not allowed:
-    st.error("Access denied. Your email is not allowed to view this app.")
-    st.button("Log out", on_click=st.logout)
-    st.stop()
-
-
 # =========================================
 # PAGE CONFIG
 # =========================================
@@ -95,12 +29,16 @@ st.markdown(
         padding-left: 2rem;
         padding-right: 2rem;
       }
+
+      /* Buttons */
       div[data-testid="stForm"] button{
         height: 42px;
         white-space: nowrap;
         padding-left: 14px;
         padding-right: 14px;
       }
+
+      /* Make the 2 button columns almost touch */
       .tight-cols [data-testid="column"]{
         padding-left: 0.02rem !important;
         padding-right: 0.02rem !important;
@@ -131,10 +69,6 @@ with st.sidebar:
         ["Ultra-Fast", "Thinking"],
         index=0
     )
-
-    st.divider()
-    st.caption(f"Signed in as: {email}")
-    st.button("Log out", on_click=st.logout)
 
 
 # =========================================
@@ -177,7 +111,11 @@ def load_or_build_index():
     embeddings = get_embeddings()
 
     if os.path.exists(INDEX_PATH):
-        return FAISS.load_local(INDEX_PATH, embeddings, allow_dangerous_deserialization=True)
+        return FAISS.load_local(
+            INDEX_PATH,
+            embeddings,
+            allow_dangerous_deserialization=True
+        )
 
     if not os.path.exists(DATA_DIR):
         return None
