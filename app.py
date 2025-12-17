@@ -13,22 +13,52 @@ from transformers import pipeline
 
 
 # =========================================================
-# 🔒 LOGIN GATE (PUT THIS AT THE VERY TOP)
-# Requires: .streamlit/secrets.toml OR Streamlit Cloud Secrets
+# 🔒 AUTH CONFIG CHECK (prevents StreamlitAuthError crash)
 # =========================================================
-ALLOWED_EMAILS = set(st.secrets.get("auth", {}).get("allowed_emails", []))
-ALLOWED_DOMAINS = set(d.lower() for d in st.secrets.get("auth", {}).get("allowed_domains", []))
+_auth = st.secrets.get("auth", {})
+AUTH_CONFIGURED = all(
+    k in _auth and str(_auth.get(k, "")).strip()
+    for k in ["redirect_uri", "cookie_secret", "client_id", "client_secret", "server_metadata_url"]
+)
+
+ALLOWED_EMAILS = set(_auth.get("allowed_emails", []))
+ALLOWED_DOMAINS = set(d.lower() for d in _auth.get("allowed_domains", []))
+
+def show_auth_setup_message():
+    st.markdown(
+        """
+        <h2 style="margin-bottom:0.25rem;">Auth is not configured</h2>
+        <p style="color:#666; margin-top:0;">
+          You clicked Sign in, but Streamlit auth credentials are missing.
+        </p>
+
+        <b>Fix:</b>
+        <ol>
+          <li>Add <code>Authlib&gt;=1.3.2</code> to <code>requirements.txt</code></li>
+          <li>On Streamlit Cloud: Manage app → Settings → Secrets</li>
+          <li>Add an <code>[auth]</code> block with: <code>redirect_uri</code>, <code>cookie_secret</code>,
+              <code>client_id</code>, <code>client_secret</code>, <code>server_metadata_url</code></li>
+          <li>Set Google OAuth “Authorized redirect URI” to:
+              <code>https://YOUR-APP.streamlit.app/oauth2callback</code></li>
+        </ol>
+        """,
+        unsafe_allow_html=True
+    )
 
 def show_login_page():
     st.markdown(
         """
         <h2 style="margin-bottom:0.25rem;">Private app</h2>
         <p style="color:#666; margin-top:0;">
-            Please sign in with your company email to continue.
+            Please sign in with your allowed email to continue.
         </p>
         """,
         unsafe_allow_html=True
     )
+    if not AUTH_CONFIGURED:
+        show_auth_setup_message()
+        st.stop()
+
     st.button("Sign in", on_click=st.login)
 
 # Not logged in -> show login page
@@ -65,16 +95,12 @@ st.markdown(
         padding-left: 2rem;
         padding-right: 2rem;
       }
-
-      /* Buttons */
       div[data-testid="stForm"] button{
         height: 42px;
         white-space: nowrap;
         padding-left: 14px;
         padding-right: 14px;
       }
-
-      /* Make columns very close */
       .tight-cols [data-testid="column"]{
         padding-left: 0.02rem !important;
         padding-right: 0.02rem !important;
@@ -151,11 +177,7 @@ def load_or_build_index():
     embeddings = get_embeddings()
 
     if os.path.exists(INDEX_PATH):
-        return FAISS.load_local(
-            INDEX_PATH,
-            embeddings,
-            allow_dangerous_deserialization=True
-        )
+        return FAISS.load_local(INDEX_PATH, embeddings, allow_dangerous_deserialization=True)
 
     if not os.path.exists(DATA_DIR):
         return None
