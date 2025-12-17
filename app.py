@@ -7,7 +7,7 @@ from langchain_community.document_loaders import TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceEmbeddings
 
-# Only loaded if you pick "Smart (LLM)" mode
+# Only used in Thinking mode
 from langchain_community.llms import HuggingFacePipeline
 from transformers import pipeline
 
@@ -20,7 +20,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# LEFT aligned layout + buttons style
+# LEFT aligned layout + tight buttons
 st.markdown(
     """
     <style>
@@ -30,9 +30,17 @@ st.markdown(
         padding-left: 2rem;
         padding-right: 2rem;
       }
+
+      /* Buttons same height + no wrap */
       div[data-testid="stForm"] button{
         height: 42px;
         white-space: nowrap;
+      }
+
+      /* Tight spacing between columns */
+      .tight-cols [data-testid="column"]{
+        padding-left: 0.25rem !important;
+        padding-right: 0.25rem !important;
       }
     </style>
     """,
@@ -45,6 +53,7 @@ st.markdown(
 if "chat" not in st.session_state:
     st.session_state.chat = []
 
+
 # =========================================
 # SIDEBAR
 # =========================================
@@ -54,7 +63,7 @@ with st.sidebar:
 
     answer_mode = st.radio(
         "Answer mode",
-        ["Ultra-fast (no LLM)", "Smart (LLM - slower)"],
+        ["Ultra-Fast", "Thinking"],
         index=0
     )
 
@@ -140,12 +149,10 @@ STOPWORDS = {
 
 def clean_text(s: str) -> str:
     s = re.sub(r"\s+", " ", s).strip()
-    # remove common SOP Q labels like "Q1 –", "Q2 -"
     s = re.sub(r"\bQ\d+\s*[-–:]\s*", "", s, flags=re.IGNORECASE)
     return s
 
 def split_sentences(text: str):
-    # simple sentence splitter
     parts = re.split(r"(?<=[\.\?\!])\s+", text)
     return [p.strip() for p in parts if p.strip()]
 
@@ -153,17 +160,15 @@ def extractive_answer(question: str, docs) -> str:
     if not docs:
         return "No relevant internal content found."
 
-    # Use only the top doc chunk (fast)
     text = clean_text(docs[0].page_content)
 
-    # Score sentences by overlap with question keywords
     q_words = [w.lower() for w in re.findall(r"[a-zA-Z0-9']+", question)]
     q_words = [w for w in q_words if w not in STOPWORDS and len(w) > 2]
     q_set = set(q_words)
 
     sents = split_sentences(text)
     if not sents:
-        return text[:400]
+        return text[:500]
 
     scored = []
     for s in sents:
@@ -172,21 +177,25 @@ def extractive_answer(question: str, docs) -> str:
         scored.append((score, s))
 
     scored.sort(key=lambda x: x[0], reverse=True)
-    best = [s for score, s in scored[:3] if score > 0]  # top 3 relevant
+    best = [s for score, s in scored[:3] if score > 0]
     if not best:
-        # fallback: first 2 sentences
         best = sents[:2]
 
     answer = " ".join(best)
-    return answer[:900]  # keep it short & fast
+
+    # Extra cleanup to avoid “SOP title + question repeated”
+    answer = re.sub(r"\bWhat is\b.*?\?", "", answer, flags=re.IGNORECASE).strip()
+    answer = clean_text(answer)
+
+    return answer[:900]
 
 
 # =========================================
-# SMART (LLM) — OPTIONAL
+# THINKING MODE (LLM) — OPTIONAL
 # =========================================
 @st.cache_resource
 def get_llm():
-    # smaller + fewer tokens = faster (still slower than no-LLM)
+    # small + short output = faster (still slower than Ultra-Fast)
     pipe = pipeline(
         "text2text-generation",
         model="google/flan-t5-small",
@@ -200,7 +209,9 @@ def cached_llm_answer(question: str, context: str) -> str:
     llm = get_llm()
     prompt = f"""
 Answer clearly and briefly using ONLY the context.
-Do not copy SOP Q1/Q2/Q3 text.
+Do not repeat the question.
+Do not list SOP Q1/Q2/Q3.
+Return ONLY the answer text.
 
 Context:
 {context}
@@ -211,7 +222,6 @@ Question:
 Answer:
 """.strip()
 
-    # version-safe calling
     try:
         result = llm.invoke(prompt)
     except Exception:
@@ -227,11 +237,11 @@ Answer:
 
     return str(result).strip()
 
-def smart_answer(question: str, docs) -> str:
+def thinking_answer(question: str, docs) -> str:
     if not docs:
         return "No relevant internal content found."
     context = "\n".join(clean_text(d.page_content) for d in docs)
-    context = context[:1800]  # cap for speed
+    context = context[:1600]
     return cached_llm_answer(question, context)
 
 
@@ -244,14 +254,14 @@ if mode == "General":
     with st.form("ask_form", clear_on_submit=True):
         question = st.text_input("Question", placeholder="Type your question and press Enter…")
 
-        # ✅ Buttons beside each other on the LEFT
-        b1, b2, spacer = st.columns([1.2, 1.6, 8])
-
+        # Tight buttons beside each other on the left
+        st.markdown("<div class='tight-cols'>", unsafe_allow_html=True)
+        b1, b2, spacer = st.columns([1.1, 1.6, 8.3])
         with b1:
             ask = st.form_submit_button("Ask")
-
         with b2:
             clear = st.form_submit_button("Clear chat")
+        st.markdown("</div>", unsafe_allow_html=True)
 
     if clear:
         st.session_state.chat = []
@@ -263,19 +273,19 @@ if mode == "General":
         elif index is None:
             st.error("Index not available. Make sure there are .txt files inside /data.")
         else:
-            # 🔥 fewer docs = faster
             docs = index.similarity_search(question, k=2)
 
-            if answer_mode == "Ultra-fast (no LLM)":
+            if answer_mode == "Ultra-Fast":
                 answer = extractive_answer(question, docs)
             else:
                 with st.spinner("Thinking..."):
-                    answer = smart_answer(question, docs)
+                    answer = thinking_answer(question, docs)
 
-            st.session_state.chat.append({"q": question, "a": answer})
+            # ✅ Save ONLY the answer (no question)
+            st.session_state.chat.append({"a": answer})
             st.rerun()
 
-    # Chat history
+    # ✅ Show ONLY answers (no Q:)
     for item in reversed(st.session_state.chat):
         st.markdown(
             f"""
@@ -285,8 +295,7 @@ if mode == "General":
                 border-radius:10px;
                 border:1px solid #EEE;
                 margin-top:12px;">
-                <b>Q:</b> {item["q"]}<br><br>
-                <b>A:</b> {item["a"]}
+                {item["a"]}
             </div>
             """,
             unsafe_allow_html=True
