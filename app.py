@@ -29,14 +29,10 @@ st.markdown(
         padding-left: 2rem;
         padding-right: 2rem;
       }
-
-      /* Buttons: same height + no wrap */
       div[data-testid="stForm"] button{
         height: 42px;
         white-space: nowrap;
       }
-
-      /* Tight spacing between button columns */
       .tight-cols [data-testid="column"]{
         padding-left: 0.20rem !important;
         padding-right: 0.20rem !important;
@@ -46,11 +42,9 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-
 # =========================================
-# SESSION STATE
+# SESSION STATE (ONLY LATEST)
 # =========================================
-# We store ONLY the latest Q/A (so UI shows only one result)
 if "last_q" not in st.session_state:
     st.session_state.last_q = ""
 if "last_a" not in st.session_state:
@@ -145,6 +139,8 @@ STOPWORDS = {
     "define","defines","tell","me","about","please"
 }
 
+QUESTION_STARTERS = ("what", "how", "why", "which", "who", "when", "where")
+
 def normalize_spaces(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip()
 
@@ -155,27 +151,41 @@ def strip_leading_numbering(s: str) -> str:
     return re.sub(r"^\s*\d+\s*[\)\-–:]\s*", "", s).strip()
 
 def strip_sop_prefix(s: str) -> str:
-    """
-    Removes prefixes like:
-    '1) Bayut – ... SOP ...'
-    and keeps only the real answer content.
-    """
     s = normalize_spaces(s)
-
-    # If "SOP" appears early, drop everything up to and including "SOP"
     m = re.search(r"\bSOP\b", s[:220])
     if m:
         s = s[m.end():].lstrip(" :–-")
         s = normalize_spaces(s)
-
-    # Also remove long title-like prefix up to first real sentence if it's too title-heavy
-    # (helps when SOP word isn't present)
-    if len(s) > 220 and s[:120].count("–") + s[:120].count("-") >= 1:
-        # keep after first sentence boundary if it exists
-        if "." in s[:220]:
-            s = s.split(".", 1)[1].strip()
-
     return s
+
+def remove_embedded_questions(text: str) -> str:
+    """
+    Remove any extra SOP questions that appear inside the answer.
+    - removes sentences ending with '?'
+    - removes lines starting with what/how/why/which/who/when/where
+    """
+    t = text.strip()
+
+    # Split into sentences (keep punctuation)
+    parts = re.split(r"(?<=[\.\?\!])\s+", t)
+    cleaned = []
+    for p in parts:
+        p_strip = p.strip()
+        if not p_strip:
+            continue
+
+        # drop if it's a question
+        if p_strip.endswith("?"):
+            continue
+
+        # drop if it starts like a question (even without '?')
+        first_word = re.split(r"\s+", p_strip.lower(), maxsplit=1)[0]
+        if first_word in QUESTION_STARTERS:
+            continue
+
+        cleaned.append(p_strip)
+
+    return " ".join(cleaned).strip()
 
 def postprocess_answer(answer: str, question: str) -> str:
     a = normalize_spaces(answer)
@@ -183,10 +193,13 @@ def postprocess_answer(answer: str, question: str) -> str:
     a = strip_leading_numbering(a)
     a = strip_sop_prefix(a)
 
-    # Remove repeated question if present
+    # Remove repeated user question if present
     q = normalize_spaces(question)
     if q and q.lower() in a.lower():
         a = re.sub(re.escape(q), "", a, flags=re.IGNORECASE).strip()
+
+    # ✅ remove embedded SOP questions
+    a = remove_embedded_questions(a)
 
     return a.strip()
 
@@ -219,11 +232,13 @@ def extractive_answer(question: str, docs) -> str:
         scored.append((len(words & q_set), s))
 
     scored.sort(key=lambda x: x[0], reverse=True)
-    best = [s for score, s in scored[:3] if score > 0]
-    if not best:
-        best = sents[:2]
 
-    answer = " ".join(best)
+    # pick top relevant sentences
+    best = [s for score, s in scored[:5] if score > 0]
+    if not best:
+        best = sents[:3]
+
+    answer = " ".join(best[:3])  # keep short
     return postprocess_answer(answer[:900], question)
 
 
@@ -246,6 +261,7 @@ def cached_llm_answer(question: str, context: str) -> str:
     prompt = f"""
 Answer clearly and briefly using ONLY the context.
 Do not repeat the question.
+Do not include any other questions.
 Return ONLY the answer.
 
 Context:
@@ -316,12 +332,11 @@ if mode == "General":
                 with st.spinner("Thinking..."):
                     answer = thinking_answer(question, docs)
 
-            # ✅ Save ONLY latest
             st.session_state.last_q = question.strip()
             st.session_state.last_a = answer.strip()
             st.rerun()
 
-    # ✅ SHOW ONLY ONE RESULT (Question then Answer)
+    # ✅ ONLY one output: Question then Answer (answer has no embedded questions)
     if st.session_state.last_q and st.session_state.last_a:
         st.markdown(
             f"""
