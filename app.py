@@ -1,4 +1,6 @@
 import os
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+import os
 import re
 import streamlit as st
 
