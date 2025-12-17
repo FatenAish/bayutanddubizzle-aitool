@@ -29,13 +29,19 @@ st.markdown(
         padding-left: 2rem;
         padding-right: 2rem;
       }
+
+      /* Buttons */
       div[data-testid="stForm"] button{
         height: 42px;
         white-space: nowrap;
+        padding-left: 14px;
+        padding-right: 14px;
       }
+
+      /* Make columns basically touch */
       .tight-cols [data-testid="column"]{
-        padding-left: 0.20rem !important;
-        padding-right: 0.20rem !important;
+        padding-left: 0.02rem !important;
+        padding-right: 0.02rem !important;
       }
     </style>
     """,
@@ -76,7 +82,7 @@ st.markdown(
         AI Content Assistant
     </h1>
     <p style='text-align:center; color:#666; margin-top:0;'>
-        Fast internal assistant powered by internal SOPs
+        Fast internal assistant
     </p>
     """,
     unsafe_allow_html=True
@@ -159,32 +165,18 @@ def strip_sop_prefix(s: str) -> str:
     return s
 
 def remove_embedded_questions(text: str) -> str:
-    """
-    Remove any extra SOP questions that appear inside the answer.
-    - removes sentences ending with '?'
-    - removes lines starting with what/how/why/which/who/when/where
-    """
-    t = text.strip()
-
-    # Split into sentences (keep punctuation)
-    parts = re.split(r"(?<=[\.\?\!])\s+", t)
+    parts = re.split(r"(?<=[\.\?\!])\s+", text.strip())
     cleaned = []
     for p in parts:
-        p_strip = p.strip()
-        if not p_strip:
+        p = p.strip()
+        if not p:
             continue
-
-        # drop if it's a question
-        if p_strip.endswith("?"):
+        if p.endswith("?"):
             continue
-
-        # drop if it starts like a question (even without '?')
-        first_word = re.split(r"\s+", p_strip.lower(), maxsplit=1)[0]
+        first_word = re.split(r"\s+", p.lower(), maxsplit=1)[0]
         if first_word in QUESTION_STARTERS:
             continue
-
-        cleaned.append(p_strip)
-
+        cleaned.append(p)
     return " ".join(cleaned).strip()
 
 def postprocess_answer(answer: str, question: str) -> str:
@@ -193,16 +185,12 @@ def postprocess_answer(answer: str, question: str) -> str:
     a = strip_leading_numbering(a)
     a = strip_sop_prefix(a)
 
-    # Remove repeated user question if present
     q = normalize_spaces(question)
     if q and q.lower() in a.lower():
         a = re.sub(re.escape(q), "", a, flags=re.IGNORECASE).strip()
 
-    # ✅ remove embedded SOP questions
     a = remove_embedded_questions(a)
-
     return a.strip()
-
 
 def split_sentences(text: str):
     parts = re.split(r"(?<=[\.\?\!])\s+", text)
@@ -232,13 +220,11 @@ def extractive_answer(question: str, docs) -> str:
         scored.append((len(words & q_set), s))
 
     scored.sort(key=lambda x: x[0], reverse=True)
-
-    # pick top relevant sentences
     best = [s for score, s in scored[:5] if score > 0]
     if not best:
         best = sents[:3]
 
-    answer = " ".join(best[:3])  # keep short
+    answer = " ".join(best[:3])
     return postprocess_answer(answer[:900], question)
 
 
@@ -306,7 +292,7 @@ if mode == "General":
         question = st.text_input("Question", placeholder="Type your question and press Enter…")
 
         st.markdown("<div class='tight-cols'>", unsafe_allow_html=True)
-        b1, b2, spacer = st.columns([1.0, 1.6, 9.0])
+        b1, b2, spacer = st.columns([0.9, 1.3, 12.0])
         with b1:
             ask = st.form_submit_button("Ask")
         with b2:
@@ -336,7 +322,6 @@ if mode == "General":
             st.session_state.last_a = answer.strip()
             st.rerun()
 
-    # ✅ ONLY one output: Question then Answer (answer has no embedded questions)
     if st.session_state.last_q and st.session_state.last_a:
         st.markdown(
             f"""
