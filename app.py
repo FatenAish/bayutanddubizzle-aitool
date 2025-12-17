@@ -10,7 +10,7 @@ from transformers import pipeline
 
 
 # =========================================
-# PAGE CONFIG (FAST)
+# PAGE CONFIG
 # =========================================
 st.set_page_config(
     page_title="Bayut & Dubizzle AI Content Assistant",
@@ -18,23 +18,10 @@ st.set_page_config(
 )
 
 # =========================================
-# SESSION STATE (CHAT MEMORY)
+# SESSION STATE
 # =========================================
 if "chat" not in st.session_state:
     st.session_state.chat = []
-
-
-# =========================================
-# SIDEBAR
-# =========================================
-with st.sidebar:
-    st.header("Options")
-
-    if st.button("🧹 Clear chat"):
-        st.session_state.chat = []
-        st.experimental_rerun()
-
-    mode = st.radio("Module", ["General", "Bayut", "Dubizzle"])
 
 
 # =========================================
@@ -48,7 +35,7 @@ st.markdown(
         AI Content Assistant
     </h1>
     <p style='text-align:center; color:#666;'>
-        Fast internal AI assistant powered by your SOPs
+        Fast internal AI assistant powered by internal SOPs
     </p>
     """,
     unsafe_allow_html=True
@@ -62,7 +49,7 @@ INDEX_PATH = "/tmp/faiss_index"
 
 
 # =========================================
-# EMBEDDINGS (CACHED – FAST)
+# EMBEDDINGS (FAST + CACHED)
 # =========================================
 @st.cache_resource
 def get_embeddings():
@@ -72,24 +59,24 @@ def get_embeddings():
 
 
 # =========================================
-# LLM (FASTEST FREE OPTION)
+# LLM (FASTEST SAFE FREE MODEL)
 # =========================================
 @st.cache_resource
 def get_llm():
     pipe = pipeline(
         "text2text-generation",
         model="google/flan-t5-base",
-        max_length=256,      # 🔥 smaller = faster
+        max_length=256,
         temperature=0
     )
     return HuggingFacePipeline(pipeline=pipe)
 
 
 # =========================================
-# BUILD INDEX (ONE TIME)
+# INDEX (LOAD ONCE)
 # =========================================
 @st.cache_resource
-def build_or_load_index():
+def load_index():
     if os.path.exists(INDEX_PATH):
         return FAISS.load_local(
             INDEX_PATH,
@@ -105,15 +92,12 @@ def build_or_load_index():
         return None
 
     documents = []
-    for file in files:
-        loader = TextLoader(
-            os.path.join(DATA_DIR, file),
-            encoding="utf-8"
-        )
+    for f in files:
+        loader = TextLoader(os.path.join(DATA_DIR, f), encoding="utf-8")
         documents.extend(loader.load())
 
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=700,      # 🔥 optimized
+        chunk_size=700,
         chunk_overlap=80
     )
     chunks = splitter.split_documents(documents)
@@ -123,17 +107,19 @@ def build_or_load_index():
     return index
 
 
+index = load_index()
+
+
 # =========================================
-# SMART ANSWER (FAST PROMPT)
+# SMART ANSWER (TYPE-SAFE)
 # =========================================
 def generate_answer(question, docs):
     llm = get_llm()
-
     context = "\n".join(d.page_content for d in docs)
 
     prompt = f"""
-Answer the question clearly and briefly.
-Use the context only.
+Answer clearly and briefly.
+Use only the context.
 Explain in your own words.
 
 Context:
@@ -144,65 +130,71 @@ Question:
 
 Answer:
 """
-    return llm(prompt)
 
+    result = llm(prompt)
 
-# =========================================
-# LOAD INDEX ONCE
-# =========================================
-index = build_or_load_index()
+    # 🔒 SAFETY: normalize output
+    if isinstance(result, list):
+        return result[0]["generated_text"]
+    return result
 
 
 # =========================================
 # MAIN UI
 # =========================================
-if mode == "General":
-    st.subheader("Ask your internal question")
+st.subheader("Ask your internal question")
 
-    question = st.text_input("Question", key="question_input")
+with st.form("ask_form", clear_on_submit=True):
 
-    if st.button("Ask"):
+    question = st.text_input(
+        "Question",
+        placeholder="Type your question and press Enter…"
+    )
+
+    col1, col2, col3 = st.columns([2, 1, 1])
+
+    with col2:
+        ask = st.form_submit_button("Ask")
+
+    with col3:
+        clear = st.form_submit_button("Clear chat")
+
+    if clear:
+        st.session_state.chat = []
+        st.experimental_rerun()
+
+    if ask:
         if not question.strip():
             st.warning("Please enter a question.")
         elif index is None:
             st.error("Index not available.")
         else:
-            docs = index.similarity_search(question, k=3)  # 🔥 fewer docs = faster
+            docs = index.similarity_search(question, k=3)
             answer = generate_answer(question, docs)
 
-            st.session_state.chat.append(
-                {"q": question, "a": answer}
-            )
+            st.session_state.chat.append({
+                "q": question,
+                "a": answer
+            })
 
             st.experimental_rerun()
 
-    # =====================================
-    # CHAT HISTORY
-    # =====================================
-    for item in reversed(st.session_state.chat):
-        st.markdown(
-            f"""
-            <div style="
-                background:#FFFFFF;
-                padding:14px;
-                border-radius:8px;
-                border:1px solid #EEE;
-                margin-top:12px;">
-                <b>Q:</b> {item["q"]}<br><br>
-                <b>A:</b> {item["a"]}
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
 
-elif mode == "Bayut":
+# =========================================
+# CHAT HISTORY
+# =========================================
+for item in reversed(st.session_state.chat):
     st.markdown(
-        "<h2 style='color:#0E8A6D;'>Bayut Module (coming soon)</h2>",
-        unsafe_allow_html=True
-    )
-
-elif mode == "Dubizzle":
-    st.markdown(
-        "<h2 style='color:#D71920;'>Dubizzle Module (coming soon)</h2>",
+        f"""
+        <div style="
+            background:#FFFFFF;
+            padding:14px;
+            border-radius:8px;
+            border:1px solid #EEE;
+            margin-top:12px;">
+            <b>Q:</b> {item["q"]}<br><br>
+            <b>A:</b> {item["a"]}
+        </div>
+        """,
         unsafe_allow_html=True
     )
