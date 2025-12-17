@@ -1,0 +1,185 @@
+1) Bayut – Paid Marketing Campaigns (PM Campaigns)
+Bayut PM Campaigns SOP
+Q1 – What is the Bayut paid marketing campaign workflow and what does it define?
+ It is a structured process used to plan, execute, and track paid campaigns at Bayut. It explains how campaigns move from ideation to live launch and performance reporting. It defines steps for planning, content creation, design, approvals, launch, and documentation so that all campaigns follow the same standards and support Bayut’s business goals.
+Q2 – What is the main purpose of having a defined workflow for Bayut paid campaigns?
+ The purpose is to standardize how campaigns are created and rolled out, avoid confusion between teams, prevent delays, and ensure quality and consistency. It also makes sure campaigns are aligned with marketing priorities, brand tone, and budget rules.
+Q3 – Which teams are involved in executing Bayut paid campaigns and what roles do they have?
+ Three teams work together:
+●	Content Marketing Team: chooses topics, writes ad copy, fills campaign sheets, manages workflow, and gets content approvals.
+
+●	Design Team: creates the visual creatives for the campaigns.
+
+●	Performance Marketing Team: manages targeting, budgets, platform setup, launching campaigns, and sharing performance results.
+
+Q4 – What types of campaigns are included in Bayut’s paid marketing process?
+ It includes traffic campaigns that drive sessions to content and key pages, and awareness campaigns that increase visibility for new projects, services, or strategic content.
+Q5 – Which platforms and ad formats are used for Bayut campaigns?
+ Bayut uses Facebook Display campaigns with image ads and carousel ads, and SEM Dynamic Search Ads (DSA) for Market Trends content where feed-based ads promote relevant articles.
+Q6 – How frequently are Bayut paid campaigns launched?
+ Campaigns are launched every month, depending on budget availability and planned priorities.
+Q7 – How is budgeting managed for Bayut campaigns?
+ The annual paid marketing budget is set by the Performance Marketing team. A key rule is that the full yearly budget should be fully consumed within the year. All entries and campaign metadata are tracked in the PM Content Campaigns sheet.
+Q8 – What is the first step when starting a new campaign cycle at Bayut?
+ The first step is for Performance to confirm the budget for the cycle. Then the Content team defines the campaign objective (traffic or awareness) and selects the relevant channels (Facebook Display and DSA if Market Trends is included).
+Q9 – What information must be added when preparing Bayut campaign content?
+ The plan must include post selection, primary text, headlines, and descriptions according to format limits. These details are entered into the campaign sheet, under the Image and Carousel tabs, so all assets and copy are documented.
+Q10 – Who approves campaign content before it moves forward?
+ The Content team shares the prepared copy with the designated approver (Sarah) for review and approval. Only after her approval can the campaign move to the creative request stage.
+Q11 – How are creative assets requested during the Bayut campaign process?
+ Creative requests are submitted to the Design team through Airtable, with all necessary asset details and final copy so the designers can create the correct visuals.
+Q12 – What happens after the campaign creatives are completed?
+ Once creatives are prepared, they go for marketing approvals where Facebook Display ads are reviewed to ensure they meet brand, content, and performance requirements before launch.
+Q13 – How is a Bayut campaign officially submitted for launch?
+ The Content team messages the Performance Marketing contact (Omar) on the Slack channel #content-pm-collaboration2, sharing the cycle name, topics, links to assets and copy, and a launch deadline (ideally within two weeks).
+Q14 – How are results tracked and documented after a Bayut campaign launches?
+ Each month, results are requested from Performance via email and then added to the campaign sheet. The data is automatically reflected in the dashboard for performance tracking and analysis.
+Q15 – What final steps are taken at the end of the annual campaign cycle for Bayut?
+ At year-end, the team checks that the annual budget is fully consumed, archives all assets, and summarizes the best-performing topics and creatives to guide future planning.
+________________________________________
+2) dubizzle – Paid Marketing Campaigns
+dubizzle PM Campaigns SOP
+Q1 – What does the dubizzle paid marketing campaign process cover?
+ It covers the full workflow for planning, creating, launching, and tracking dubizzle paid campaigns. It ensures campaigns are produced consistently, follow clear steps, and are aligned with dubizzle’s business and budget goals.
+Q2 – What is the purpose of having a standardized process for dubizzle paid campaigns?
+ The purpose is to streamline planning and execution so everyone follows the same structure for campaign planning, creative production, approvals, launch, and reporting. This reduces errors, supports collaboration, and keeps campaigns aligned with objectives.
+Q3 – Which teams are involved in dubizzle paid marketing campaigns and what are their responsibilities?
+●	Content Marketing Team: suggests topics, writes ad text, manages workflow, and handles final reviews and approvals.
+
+●	Design Team: produces the visual creatives used in campaigns.
+
+●	Performance Marketing Team: confirms budgets, sets targeting, launches campaigns, and shares results.
+
+Q4 – What types of campaigns are included in dubizzle’s paid campaign process?
+ It includes traffic campaigns aimed at driving sessions to content and priority pages, and awareness campaigns to increase brand visibility for new projects or services.
+Q5 – Which advertising platforms and formats are used for dubizzle campaigns?
+ The process uses Facebook Display image ads and carousel ads for traffic objectives, and SEM Dynamic Search Ads (DSA) for Market Trends content using feed-based ads.
+Q6 – How frequently are dubizzle paid campaigns launched?
+ They are launched monthly, based on budget availability and campaign planning.
+Q7 – How is budgeting handled for dubizzle paid campaigns?
+ The annual PM budget is confirmed by Performance Marketing. The rule is that the yearly budget must be fully consumed before year-end, and all budget entries and metadata are tracked in the “PM Content Campaigns – 2024” sheet.
+Q8 – What is the first step when planning a dubizzle campaign cycle?
+ Performance confirms the budget for the cycle. After that, the Content Team sets the campaign objective and chooses the channels, such as Facebook Display and DSA if Market Trends is part of the plan.
+Q9 – What details must be included when preparing dubizzle campaign content?
+ The content plan includes post selection, primary ad text, headlines, descriptions, and all relevant format-specific data. These are recorded in the campaign sheet under Image and Carousel tabs.
+Q10 – Who reviews and approves dubizzle campaign content before creative production?
+ The Content team shares content with the approver (Sarah) for review. Only after approval can creative requests be submitted.
+Q11 – How are creative assets requested in the dubizzle campaign workflow?
+ Creative requests are submitted to the Design Team through Airtable, including the campaign details and final copy, so designers can create the required assets.
+Q12 – What happens after dubizzle campaign creatives are ready?
+ Facebook Display ads go through a marketing approval step to ensure accuracy, branding, and performance alignment before launch.
+Q13 – How is a dubizzle campaign submitted for launch?
+ The Content team contacts the Performance Marketing contact (Youssef) via the Slack channel content-pm-collaboration2 with cycle name, topics, asset and copy links, and a launch deadline (target of two weeks).
+Q14 – How are dubizzle campaign results captured and tracked?
+ Monthly results are requested from Youssef via email and then logged in the campaign sheet. The information then appears automatically in the dashboard.
+Q15 – What year-end activities are required for dubizzle campaigns?
+ The team confirms the annual budget is fully spent, archives assets, and summarizes best-performing topics and creatives as a reference for future campaigns.
+________________________________________
+3) Bayut – Algolia Locations (WordPress Articles)
+Algolia Locations SOP
+Q1 – What is the purpose of adding Algolia locations to Bayut articles?
+ The purpose is to make sure every published blog article has a correct Algolia location tag so it can appear under the right filters and location searches, and be fully ready for migration to Strapi and other future systems.
+Q2 – What type of articles are included in the Algolia location process?
+ All published WordPress articles are included, both new and existing. Each must be checked and updated to ensure a correct Algolia location is assigned, when applicable.
+Q3 – Which articles are excluded from the location tagging process?
+ Drafts, unpublished content, external or test/training pages, and articles that do not need location tags such as discussion pieces or content covering the entire UAE (not tied to one emirate) are excluded.
+Q4 – Who is responsible for maintaining accurate Algolia location tagging?
+ The Sub-editor ensures every eligible article has an Algolia location assigned and updates the Articles Algolia Locations Google Sheet. The Content team adds locations to newly published articles.
+Q5 – How often should Algolia location verification be performed?
+ It should happen weekly, every Sunday, to keep up with new and updated articles.
+Q6 – What tools are required for the Algolia locations workflow?
+ You need access to WordPress, the Algolia Locations Tool, and the Articles Algolia Locations Google Sheet that lists articles and their post IDs.
+Q7 – What is the first step when starting the weekly location review?
+ Open WordPress, launch the Algolia Locations Tool, and open the Google Sheet that tracks all articles and their post IDs.
+Q8 – What is the process for reviewing newly published articles?
+ Add new articles to the Google Sheet, verify that the writer added the correct location, and if a location is missing, add it via the Algolia Locations Tool.
+Q9 – What should be done if a needed location does not exist in Algolia?
+ A request must be raised with Product or Tech to create a new location index, so it can be used in tagging.
+Q10 – What steps are required when reviewing updated articles?
+ Check all articles updated during the week to confirm they have a correct Algolia location. Make sure each is recorded in the Google Sheet as verified.
+Q11 – How should repeated location tagging mistakes be handled?
+ If a writer repeatedly forgets to add locations, the Sub-editor should inform the line manager so they can follow up and address the issue.
+Q12 – What information is stored in the Articles Algolia Locations Google Sheet?
+ The sheet records all articles along with their post IDs and whether an Algolia location has been added, serving as the tracking and verification log.
+Q13 – Why is accurate tracking of Algolia locations important?
+ Accurate tracking ensures there are no missing tags, supports smooth migration into Strapi, and allows easy auditing of what has been completed and what still needs updates.
+Q14 – What is the expected outcome after completing the weekly workflow?
+ By the end of each weekly review, all relevant published and updated articles should have correct locations assigned and be properly reflected in the Google Sheet.
+Q15 – How does location tagging help Bayut’s content experience overall?
+ Correct location tagging improves search, filters, and user journeys on the site, allowing articles to appear for the right emirate or area and improving content discoverability and relevance.
+________________________________________
+4) MyBayut – Newsletters
+MyBayut Newsletters SOP
+Q1 – What is the purpose of the MyBayut newsletter process?
+ The purpose is to manage how MyBayut’s weekly B2C newsletters are planned, created, reviewed, and sent so they remain consistent, on-brand, and fully based on MyBayut blog content.
+Q2 – What goals do the MyBayut newsletters aim to achieve?
+ They aim to deliver useful and engaging blog content to readers, increase engagement, encourage recurring visits to the MyBayut blog, drive qualified traffic to key articles, and strengthen MyBayut’s position as a trusted real estate and lifestyle resource.
+Q3 – Which teams are involved in creating and delivering the newsletters and what are their roles?
+ The Content Marketing Team prepares the monthly content calendar, selects topics and articles, writes tailored content, tests links and layout, and monitors performance. The Performance Marketing Team manages the technical setup and sending of newsletters.
+Q4 – Who are the main points of contact for English and Arabic MyBayut newsletters?
+ English: Sabeeh Rizvi (POC) and writer Laraib Anis.
+ Arabic: Fatina AlHalaiqa (POC) and writer Sana’a Yousef.
+ Final content approval is done by Sarah Alnawah, and CLM support is provided by Muhammad Noshaiz.
+Q5 – What is the timeline for preparing the monthly newsletter content calendar?
+ The calendar must be prepared by the 14th of every month. It should list the upcoming newsletter topics, featured articles, and article links and be reviewed and approved by Sarah before content creation starts.
+Q6 – How is content created for the MyBayut newsletters?
+ Content is prepared weekly based on the approved calendar. The writers craft newsletter copy that is aligned with the audience and brand tone, referring only to content from the MyBayut blog.
+Q7 – When and how are visuals requested for the newsletters?
+ After the calendar is approved, the writer submits visual requests to the Design Team. All visuals must follow Bayut branding guidelines and fit the newsletter layout. The writer is responsible for ensuring these requests are sent on time.
+Q8 – What is required when submitting newsletter content for review?
+ The final copy, visuals, and links are uploaded to the Airtable – Newsletter section. The status is then updated to “Ready for Editing,” which assigns the newsletter automatically to the appropriate editor.
+Q9 – Who reviews newsletter content and how is the status updated?
+ Content leads review quality: Arabic newsletters are reviewed by Fatina, English by Sabeeh. After edits and approval, the editor changes the Airtable status to “Ready for Testing.”
+Q10 – What is included in the internal testing stage for newsletters?
+ Once in “Ready for Testing,” a test send is triggered in MoEngage, and the newsletter is shared via the #bayut-newsletter Slack group. Stakeholders (writers, editors, POCs) check layout, formatting, link and button behavior, visual appearance (including mobile view), and correct article links.
+Q11 – Who gives final approval before sending a MyBayut newsletter to the audience?
+ After internal testing is approved by the content team, the newsletter is submitted to Sarah Alnawah for final approval. Only then does the Performance Marketing Team schedule the live send.
+Q12 – What is the weekly sending schedule for MyBayut newsletters?
+ English: test every Thursday, roll-out every Friday.
+ Arabic: test every Tuesday, roll-out every Wednesday.
+Q13 – How is MyBayut newsletter performance tracked?
+ Performance is tracked using MoEngage analytics. Results are extracted five days after sending and recorded in the Newsletter Report dashboard for visibility and analysis.
+Q14 – What metrics must be included in the weekly newsletter performance review?
+ The review covers emails sent, open rate, clicks, CTR, unsubscribes, total clicks, traffic to the website, traffic to social media, traffic to apps, and traffic to Google Reviews.
+Q15 – How are improvements to the newsletter process handled?
+ Any suggestions or requested changes to the process should be shared with the Content Marketing Manager, who reviews them and decides what to implement in future cycles.
+________________________________________
+5) Bayut – Social Media Posting (Instagram)
+Social Media Posting SOP
+Q1 – What does the Bayut social media posting process cover?
+ It covers planning, preparing, reviewing, approving, and publishing content on the Bayut Instagram page, including feed posts, reels, and stories, with a focus on timeliness, quality, and brand consistency.
+Q2 – What is the main purpose of this social media posting process?
+ The purpose is to ensure that all Instagram content for Bayut follows a consistent calendar, correct approvals, and proper creative standards while reflecting the brand’s tone and objectives.
+Q3 – Which teams are involved and what are their roles?
+ The Content Team prepares the content calendar, suggests ideas, and writes captions. The Social Media Team prepares briefs, coordinates with designers, schedules and publishes posts, and monitors performance. The Design Team creates visuals based on briefs and platform specifications.
+Q4 – Who are the main points of contact for content and social media?
+ Content Team:
+●	AR: Malaak Is-Haqat (with AR approval by Areej Tawfiq Abu Reida)
+
+●	EN: Fatima Khanum (with EN approval by Sabeeh Rizvi)
+ Final approval is given by Sarah Alnawah.
+ Social Media Team: Saima Abid and Emma Dourado.
+
+Q5 – How often is the social media content calendar prepared and what does it include?
+ Before the 10th of each month, a calendar is prepared for the upcoming month and sent for approval. It includes up to 20 post ideas, from which the Social Media Team selects based on their publishing schedule.
+Q6 – What information must be added to the social media calendar sheet?
+ The sheet must include the month, theme or campaign, language, priority level, post details, post link, and captions (if required).
+Q7 – What is the process for requesting creatives for social posts?
+ The Social Media Team prepares a brief with post title and caption, image references or concept, platform dimensions (Instagram sizes), and visual preferences. The brief is approved by Areej and Sarah, then uploaded to the Design Request Form and shared with Designers.
+Q8 – What should a creative brief contain?
+ It should include key details such as title, caption, visual direction, image references if available, required dimensions, and any stylistic preferences like a feminine look, property-focused visuals, or event coverage.
+Q9 – Who approves creative briefs before designers start working?
+ Creative briefs must be approved by Areej Tawfiq Abu Reida and Sarah Alnawah.
+Q10 – What happens after the Design Team creates visuals?
+ The Design Team seeks final design approval from Areej and Sarah. Once approved, the Content Team uploads creatives to Airtable, and the Social Media Team schedules or publishes the posts.
+Q11 – What tools and resources support the social media posting workflow?
+ Tools include the Bayut Social Media Calendar.xlsx, Shutterstock for images, the Design Request Form (Airtable), and brief templates for different content types like stories, MyBayut posts, Market Trends, Area Guides, and Building Guides.
+Q12 – How many ideas should be included in the monthly content calendar?
+ Up to 20 post ideas should be included, giving the Social Media Team enough options to choose from based on their schedule.
+Q13 – Who is responsible for writing captions for Bayut social posts?
+ The Content Team writes captions, aligned with brand voice and content strategy.
+Q14 – What are the Social Media Team’s responsibilities after posts are published?
+ They schedule and publish posts, monitor performance, and maintain consistency in posting patterns and engagement.
+Q15 – How does this process help the Bayut brand on social media?
+ It ensures that every post is pre-planned, approved, and visually aligned with brand identity, supporting a consistent, professional appearance and a reliable content cadence on Instagram.
+
