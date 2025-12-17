@@ -17,13 +17,19 @@ st.set_page_config(
     layout="wide"
 )
 
-# UI polish + center + fix button wrap/height
+# ✅ LEFT-ALIGNED LAYOUT (NOT CENTER)
 st.markdown(
     """
     <style>
-      .block-container { max-width: 980px; padding-top: 2rem; }
+      /* Full width + left aligned */
+      .block-container {
+        max-width: 100% !important;
+        padding-top: 2rem;
+        padding-left: 2rem;
+        padding-right: 2rem;
+      }
 
-      /* Make buttons same height + no wrapping */
+      /* Buttons: same height + no wrap */
       div[data-testid="stForm"] button {
         width: 100%;
         height: 42px;
@@ -50,7 +56,7 @@ with st.sidebar:
 
 
 # =========================================
-# TITLE
+# TITLE (keep centered if you like)
 # =========================================
 st.markdown(
     """
@@ -88,11 +94,10 @@ def get_embeddings():
 # =========================================
 @st.cache_resource
 def get_llm():
-    # 🔥 Much faster than flan-t5-base on Streamlit CPU
     pipe = pipeline(
         "text2text-generation",
         model="google/flan-t5-small",
-        max_new_tokens=128,   # 🔥 faster
+        max_new_tokens=128,
         temperature=0
     )
     return HuggingFacePipeline(pipeline=pipe)
@@ -105,6 +110,7 @@ def get_llm():
 def load_or_build_index():
     embeddings = get_embeddings()
 
+    # Load if exists
     if os.path.exists(INDEX_PATH):
         return FAISS.load_local(
             INDEX_PATH,
@@ -112,6 +118,7 @@ def load_or_build_index():
             allow_dangerous_deserialization=True
         )
 
+    # Build if missing
     if not os.path.exists(DATA_DIR):
         return None
 
@@ -163,13 +170,13 @@ Question:
 Answer:
 """.strip()
 
-    # ✅ Fix TypeError across LangChain versions
+    # LangChain version-safe calling
     try:
         result = llm.invoke(prompt)
     except Exception:
         result = llm(prompt) if callable(llm) else str(llm)
 
-    # Normalize output
+    # Normalize output types
     if isinstance(result, list):
         if result and isinstance(result[0], dict) and "generated_text" in result[0]:
             return result[0]["generated_text"].strip()
@@ -182,9 +189,8 @@ Answer:
 
 
 def generate_answer(question, docs):
-    # 🔥 Smaller context = faster
     context = "\n".join(d.page_content for d in docs)
-    context = context[:2500]  # cap context length for speed
+    context = context[:2500]  # cap context for speed
     return cached_llm_answer(question, context)
 
 
@@ -197,7 +203,7 @@ if mode == "General":
     with st.form("ask_form", clear_on_submit=True):
         question = st.text_input("Question", placeholder="Type your question and press Enter…")
 
-        # ✅ Centered buttons, wider columns so text doesn't wrap
+        # Buttons next to each other and centered under the input
         left, b1, b2, right = st.columns([5, 2, 2, 5])
 
         with b1:
@@ -217,13 +223,13 @@ if mode == "General":
             st.error("Index not available. Make sure there are .txt files inside /data.")
         else:
             with st.spinner("Thinking..."):
-                # 🔥 fewer docs = faster
-                docs = index.similarity_search(question, k=2)
+                docs = index.similarity_search(question, k=2)  # fewer docs = faster
                 answer = generate_answer(question, docs)
 
             st.session_state.chat.append({"q": question, "a": answer})
             st.rerun()
 
+    # Chat history
     for item in reversed(st.session_state.chat):
         st.markdown(
             f"""
