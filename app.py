@@ -20,7 +20,6 @@ st.set_page_config(
     layout="wide"
 )
 
-# LEFT aligned layout + tight buttons
 st.markdown(
     """
     <style>
@@ -31,34 +30,31 @@ st.markdown(
         padding-right: 2rem;
       }
 
-      /* Buttons same height + no wrap */
+      /* Buttons: same height + no wrap */
       div[data-testid="stForm"] button{
         height: 42px;
         white-space: nowrap;
       }
 
-      /* Tight spacing between columns */
+      /* Tight spacing between button columns */
       .tight-cols [data-testid="column"]{
-        padding-left: 0.25rem !important;
-        padding-right: 0.25rem !important;
+        padding-left: 0.20rem !important;
+        padding-right: 0.20rem !important;
       }
     </style>
     """,
     unsafe_allow_html=True
 )
 
+
 # =========================================
 # SESSION STATE
 # =========================================
-if "chat" not in st.session_state:
-    st.session_state.chat = []
-
-# ✅ AUTO-MIGRATE OLD CHAT ITEMS (prevents KeyError)
-fixed_chat = []
-for item in st.session_state.chat:
-    if isinstance(item, dict):
-        fixed_chat.append({"q": item.get("q", ""), "a": item.get("a", "")})
-st.session_state.chat = fixed_chat
+# We store ONLY the latest Q/A (so UI shows only one result)
+if "last_q" not in st.session_state:
+    st.session_state.last_q = ""
+if "last_a" not in st.session_state:
+    st.session_state.last_a = ""
 
 
 # =========================================
@@ -73,6 +69,7 @@ with st.sidebar:
         ["Ultra-Fast", "Thinking"],
         index=0
     )
+
 
 # =========================================
 # TITLE
@@ -103,9 +100,7 @@ INDEX_PATH = "/tmp/faiss_index"
 # =========================================
 @st.cache_resource
 def get_embeddings():
-    return HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-MiniLM-L6-v2"
-    )
+    return HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
 
 # =========================================
@@ -116,11 +111,7 @@ def load_or_build_index():
     embeddings = get_embeddings()
 
     if os.path.exists(INDEX_PATH):
-        return FAISS.load_local(
-            INDEX_PATH,
-            embeddings,
-            allow_dangerous_deserialization=True
-        )
+        return FAISS.load_local(INDEX_PATH, embeddings, allow_dangerous_deserialization=True)
 
     if not os.path.exists(DATA_DIR):
         return None
@@ -146,35 +137,59 @@ index = load_or_build_index()
 
 
 # =========================================
-# CLEANING / POST-PROCESS
+# CLEANING (IMPORTANT)
 # =========================================
 STOPWORDS = {
-    "what", "is", "are", "the", "a", "an", "and", "or", "to", "of", "in", "on", "for",
-    "how", "does", "do", "did", "when", "where", "why", "which", "who", "with", "from",
-    "define", "defines", "tell", "me", "about", "please"
+    "what","is","are","the","a","an","and","or","to","of","in","on","for",
+    "how","does","do","did","when","where","why","which","who","with","from",
+    "define","defines","tell","me","about","please"
 }
 
-def clean_text(s: str) -> str:
-    s = re.sub(r"\s+", " ", s).strip()
-    s = re.sub(r"\bQ\d+\s*[-–:]\s*", "", s, flags=re.IGNORECASE)  # remove Q1/Q2 labels
+def normalize_spaces(s: str) -> str:
+    return re.sub(r"\s+", " ", s).strip()
+
+def strip_q_labels(s: str) -> str:
+    return re.sub(r"\bQ\d+\s*[-–:]\s*", "", s, flags=re.IGNORECASE).strip()
+
+def strip_leading_numbering(s: str) -> str:
+    return re.sub(r"^\s*\d+\s*[\)\-–:]\s*", "", s).strip()
+
+def strip_sop_prefix(s: str) -> str:
+    """
+    Removes prefixes like:
+    '1) Bayut – ... SOP ...'
+    and keeps only the real answer content.
+    """
+    s = normalize_spaces(s)
+
+    # If "SOP" appears early, drop everything up to and including "SOP"
+    m = re.search(r"\bSOP\b", s[:220])
+    if m:
+        s = s[m.end():].lstrip(" :–-")
+        s = normalize_spaces(s)
+
+    # Also remove long title-like prefix up to first real sentence if it's too title-heavy
+    # (helps when SOP word isn't present)
+    if len(s) > 220 and s[:120].count("–") + s[:120].count("-") >= 1:
+        # keep after first sentence boundary if it exists
+        if "." in s[:220]:
+            s = s.split(".", 1)[1].strip()
+
     return s
 
 def postprocess_answer(answer: str, question: str) -> str:
-    a = clean_text(answer)
+    a = normalize_spaces(answer)
+    a = strip_q_labels(a)
+    a = strip_leading_numbering(a)
+    a = strip_sop_prefix(a)
 
-    # remove leading numbering like "1) " or "1 - "
-    a = re.sub(r"^\s*\d+\s*[\)\-–:]\s*", "", a)
-
-    # if SOP title is stuck at the beginning, drop it
-    if "SOP" in a[:140] and "." in a:
-        a = a.split(".", 1)[1].strip()
-
-    # remove repeated question if it appears inside answer
-    q = clean_text(question)
+    # Remove repeated question if present
+    q = normalize_spaces(question)
     if q and q.lower() in a.lower():
         a = re.sub(re.escape(q), "", a, flags=re.IGNORECASE).strip()
 
     return a.strip()
+
 
 def split_sentences(text: str):
     parts = re.split(r"(?<=[\.\?\!])\s+", text)
@@ -182,13 +197,13 @@ def split_sentences(text: str):
 
 
 # =========================================
-# ULTRA-FAST ANSWER (NO LLM)
+# ULTRA-FAST (NO LLM)
 # =========================================
 def extractive_answer(question: str, docs) -> str:
     if not docs:
         return "No relevant internal content found."
 
-    text = clean_text(docs[0].page_content)
+    text = normalize_spaces(docs[0].page_content)
 
     q_words = [w.lower() for w in re.findall(r"[a-zA-Z0-9']+", question)]
     q_words = [w for w in q_words if w not in STOPWORDS and len(w) > 2]
@@ -196,13 +211,12 @@ def extractive_answer(question: str, docs) -> str:
 
     sents = split_sentences(text)
     if not sents:
-        return postprocess_answer(text[:500], question)
+        return postprocess_answer(text[:600], question)
 
     scored = []
     for s in sents:
         words = set(w.lower() for w in re.findall(r"[a-zA-Z0-9']+", s))
-        score = len(words & q_set)
-        scored.append((score, s))
+        scored.append((len(words & q_set), s))
 
     scored.sort(key=lambda x: x[0], reverse=True)
     best = [s for score, s in scored[:3] if score > 0]
@@ -214,7 +228,7 @@ def extractive_answer(question: str, docs) -> str:
 
 
 # =========================================
-# THINKING MODE (LLM) — OPTIONAL
+# THINKING (LLM)
 # =========================================
 @st.cache_resource
 def get_llm():
@@ -229,12 +243,10 @@ def get_llm():
 @st.cache_data(show_spinner=False)
 def cached_llm_answer(question: str, context: str) -> str:
     llm = get_llm()
-
     prompt = f"""
 Answer clearly and briefly using ONLY the context.
 Do not repeat the question.
-Do not list SOP Q1/Q2/Q3.
-Return ONLY the answer text.
+Return ONLY the answer.
 
 Context:
 {context}
@@ -263,9 +275,9 @@ Answer:
 def thinking_answer(question: str, docs) -> str:
     if not docs:
         return "No relevant internal content found."
-    context = "\n".join(clean_text(d.page_content) for d in docs)
-    context = context[:1600]
-    return postprocess_answer(cached_llm_answer(question, context), question)
+    context = "\n".join(normalize_spaces(d.page_content) for d in docs)[:1600]
+    raw = cached_llm_answer(question, context)
+    return postprocess_answer(raw, question)
 
 
 # =========================================
@@ -277,9 +289,8 @@ if mode == "General":
     with st.form("ask_form", clear_on_submit=True):
         question = st.text_input("Question", placeholder="Type your question and press Enter…")
 
-        # tight buttons beside each other on the left
         st.markdown("<div class='tight-cols'>", unsafe_allow_html=True)
-        b1, b2, spacer = st.columns([1.0, 1.4, 9.0])
+        b1, b2, spacer = st.columns([1.0, 1.6, 9.0])
         with b1:
             ask = st.form_submit_button("Ask")
         with b2:
@@ -287,7 +298,8 @@ if mode == "General":
         st.markdown("</div>", unsafe_allow_html=True)
 
     if clear:
-        st.session_state.chat = []
+        st.session_state.last_q = ""
+        st.session_state.last_a = ""
         st.rerun()
 
     if ask:
@@ -304,25 +316,23 @@ if mode == "General":
                 with st.spinner("Thinking..."):
                     answer = thinking_answer(question, docs)
 
-            # ✅ Save JUST question + answer
-            st.session_state.chat.append({"q": question.strip(), "a": answer})
+            # ✅ Save ONLY latest
+            st.session_state.last_q = question.strip()
+            st.session_state.last_a = answer.strip()
             st.rerun()
 
-    # ✅ Show JUST question then answer (safe)
-    for item in reversed(st.session_state.chat):
-        q = item.get("q", "")
-        a = item.get("a", "")
-
+    # ✅ SHOW ONLY ONE RESULT (Question then Answer)
+    if st.session_state.last_q and st.session_state.last_a:
         st.markdown(
             f"""
             <div style="
                 background:#FFFFFF;
-                padding:14px;
+                padding:16px;
                 border-radius:10px;
                 border:1px solid #EEE;
-                margin-top:12px;">
-                {f"<b>{q}</b><br><br>" if q else ""}
-                {a}
+                margin-top:14px;">
+                <b>{st.session_state.last_q}</b><br><br>
+                {st.session_state.last_a}
             </div>
             """,
             unsafe_allow_html=True
