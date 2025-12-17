@@ -1,8 +1,7 @@
-streamlit>=1.42.0
-Authlib>=1.3.2
-transformers
-torch
+streamlit
 langchain-community
 langchain-text-splitters
 sentence-transformers
 faiss-cpu
+transformers
+torch
