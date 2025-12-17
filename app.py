@@ -12,6 +12,42 @@ from langchain_community.llms import HuggingFacePipeline
 from transformers import pipeline
 
 
+# =========================================================
+# 🔒 LOGIN GATE (PUT THIS AT THE VERY TOP)
+# Requires: .streamlit/secrets.toml OR Streamlit Cloud Secrets
+# =========================================================
+ALLOWED_EMAILS = set(st.secrets.get("auth", {}).get("allowed_emails", []))
+ALLOWED_DOMAINS = set(d.lower() for d in st.secrets.get("auth", {}).get("allowed_domains", []))
+
+def show_login_page():
+    st.markdown(
+        """
+        <h2 style="margin-bottom:0.25rem;">Private app</h2>
+        <p style="color:#666; margin-top:0;">
+            Please sign in with your company email to continue.
+        </p>
+        """,
+        unsafe_allow_html=True
+    )
+    st.button("Sign in", on_click=st.login)
+
+# Not logged in -> show login page
+if not getattr(st.user, "is_logged_in", False):
+    show_login_page()
+    st.stop()
+
+# Logged in -> check allowlist
+email = (getattr(st.user, "email", "") or "").lower()
+domain = email.split("@")[-1] if "@" in email else ""
+
+allowed = (email in ALLOWED_EMAILS) or (domain in ALLOWED_DOMAINS)
+
+if not allowed:
+    st.error("Access denied. Your email is not allowed to view this app.")
+    st.button("Log out", on_click=st.logout)
+    st.stop()
+
+
 # =========================================
 # PAGE CONFIG
 # =========================================
@@ -38,7 +74,7 @@ st.markdown(
         padding-right: 14px;
       }
 
-      /* Make columns basically touch */
+      /* Make columns very close */
       .tight-cols [data-testid="column"]{
         padding-left: 0.02rem !important;
         padding-right: 0.02rem !important;
@@ -69,6 +105,10 @@ with st.sidebar:
         ["Ultra-Fast", "Thinking"],
         index=0
     )
+
+    st.divider()
+    st.caption(f"Signed in as: {email}")
+    st.button("Log out", on_click=st.logout)
 
 
 # =========================================
@@ -111,7 +151,11 @@ def load_or_build_index():
     embeddings = get_embeddings()
 
     if os.path.exists(INDEX_PATH):
-        return FAISS.load_local(INDEX_PATH, embeddings, allow_dangerous_deserialization=True)
+        return FAISS.load_local(
+            INDEX_PATH,
+            embeddings,
+            allow_dangerous_deserialization=True
+        )
 
     if not os.path.exists(DATA_DIR):
         return None
@@ -137,14 +181,13 @@ index = load_or_build_index()
 
 
 # =========================================
-# CLEANING (IMPORTANT)
+# CLEANING
 # =========================================
 STOPWORDS = {
     "what","is","are","the","a","an","and","or","to","of","in","on","for",
     "how","does","do","did","when","where","why","which","who","with","from",
     "define","defines","tell","me","about","please"
 }
-
 QUESTION_STARTERS = ("what", "how", "why", "which", "who", "when", "where")
 
 def normalize_spaces(s: str) -> str:
