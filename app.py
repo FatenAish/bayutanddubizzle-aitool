@@ -53,6 +53,13 @@ st.markdown(
 if "chat" not in st.session_state:
     st.session_state.chat = []
 
+# ✅ AUTO-MIGRATE OLD CHAT ITEMS (prevents KeyError)
+fixed_chat = []
+for item in st.session_state.chat:
+    if isinstance(item, dict):
+        fixed_chat.append({"q": item.get("q", ""), "a": item.get("a", "")})
+st.session_state.chat = fixed_chat
+
 
 # =========================================
 # SIDEBAR
@@ -158,10 +165,8 @@ def postprocess_answer(answer: str, question: str) -> str:
     # remove leading numbering like "1) " or "1 - "
     a = re.sub(r"^\s*\d+\s*[\)\-–:]\s*", "", a)
 
-    # if SOP title is stuck at the beginning, drop it (common pattern contains "SOP")
-    # Example: "Bayut – ... SOP It is a structured process..."
+    # if SOP title is stuck at the beginning, drop it
     if "SOP" in a[:140] and "." in a:
-        # keep everything after first period
         a = a.split(".", 1)[1].strip()
 
     # remove repeated question if it appears inside answer
@@ -170,7 +175,6 @@ def postprocess_answer(answer: str, question: str) -> str:
         a = re.sub(re.escape(q), "", a, flags=re.IGNORECASE).strip()
 
     return a.strip()
-
 
 def split_sentences(text: str):
     parts = re.split(r"(?<=[\.\?\!])\s+", text)
@@ -304,8 +308,11 @@ if mode == "General":
             st.session_state.chat.append({"q": question.strip(), "a": answer})
             st.rerun()
 
-    # ✅ Show JUST question then answer
+    # ✅ Show JUST question then answer (safe)
     for item in reversed(st.session_state.chat):
+        q = item.get("q", "")
+        a = item.get("a", "")
+
         st.markdown(
             f"""
             <div style="
@@ -314,8 +321,8 @@ if mode == "General":
                 border-radius:10px;
                 border:1px solid #EEE;
                 margin-top:12px;">
-                <b>{item["q"]}</b><br><br>
-                {item["a"]}
+                {f"<b>{q}</b><br><br>" if q else ""}
+                {a}
             </div>
             """,
             unsafe_allow_html=True
