@@ -49,7 +49,7 @@ st.markdown(
 )
 
 # =========================================
-# SESSION STATE (ONLY LATEST)
+# SESSION STATE (ONLY LATEST Q/A)
 # =========================================
 if "last_q" not in st.session_state:
     st.session_state.last_q = ""
@@ -129,7 +129,10 @@ def load_or_build_index():
         loader = TextLoader(os.path.join(DATA_DIR, f), encoding="utf-8")
         documents.extend(loader.load())
 
-    splitter = RecursiveCharacterTextSplitter(chunk_size=650, chunk_overlap=80)
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=650,
+        chunk_overlap=80
+    )
     chunks = splitter.split_documents(documents)
 
     index = FAISS.from_documents(chunks, embeddings)
@@ -141,13 +144,14 @@ index = load_or_build_index()
 
 
 # =========================================
-# CLEANING
+# TEXT CLEANING
 # =========================================
 STOPWORDS = {
     "what","is","are","the","a","an","and","or","to","of","in","on","for",
     "how","does","do","did","when","where","why","which","who","with","from",
     "define","defines","tell","me","about","please"
 }
+
 QUESTION_STARTERS = ("what", "how", "why", "which", "who", "when", "where")
 
 def normalize_spaces(s: str) -> str:
@@ -223,6 +227,7 @@ def extractive_answer(question: str, docs) -> str:
         scored.append((len(words & q_set), s))
 
     scored.sort(key=lambda x: x[0], reverse=True)
+
     best = [s for score, s in scored[:5] if score > 0]
     if not best:
         best = sents[:3]
@@ -247,6 +252,7 @@ def get_llm():
 @st.cache_data(show_spinner=False)
 def cached_llm_answer(question: str, context: str) -> str:
     llm = get_llm()
+
     prompt = f"""
 Answer clearly and briefly using ONLY the context.
 Do not repeat the question.
@@ -280,6 +286,7 @@ Answer:
 def thinking_answer(question: str, docs) -> str:
     if not docs:
         return "No relevant internal content found."
+
     context = "\n".join(normalize_spaces(d.page_content) for d in docs)[:1600]
     raw = cached_llm_answer(question, context)
     return postprocess_answer(raw, question)
@@ -295,10 +302,10 @@ if mode == "General":
         question = st.text_input("Question", placeholder="Type your question and press Enter…")
 
         st.markdown("<div class='tight-cols'>", unsafe_allow_html=True)
-        b1, b2, spacer = st.columns([0.9, 1.3, 12.0])
-        with b1:
+        c1, c2, c3 = st.columns([0.9, 1.35, 12.0])
+        with c1:
             ask = st.form_submit_button("Ask")
-        with b2:
+        with c2:
             clear = st.form_submit_button("Clear chat")
         st.markdown("</div>", unsafe_allow_html=True)
 
