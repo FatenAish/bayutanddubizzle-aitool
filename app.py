@@ -15,12 +15,16 @@ st.set_page_config(
     layout="wide"
 )
 
-# Sidebar
+# =========================================
+# SIDEBAR
+# =========================================
 with st.sidebar:
     st.header("Select an option")
     mode = st.radio("", ["General", "Bayut", "Dubizzle"])
 
-# Title
+# =========================================
+# TITLE
+# =========================================
 st.markdown(
     """
     <h1 style='text-align:center; font-weight:800;'>
@@ -38,12 +42,12 @@ st.markdown(
 # =========================================
 # PATHS (CLOUD SAFE)
 # =========================================
-DATA_DIR = "data"                  # read-only
-INDEX_PATH = "/tmp/faiss_index"    # writable on Streamlit Cloud
+DATA_DIR = "data"                 # read-only
+INDEX_PATH = "/tmp/faiss_index"   # writable
 
 
 # =========================================
-# EMBEDDINGS (100% FREE)
+# EMBEDDINGS (FREE)
 # =========================================
 @st.cache_resource
 def get_embeddings():
@@ -53,7 +57,7 @@ def get_embeddings():
 
 
 # =========================================
-# FUNCTIONS
+# FAISS FUNCTIONS
 # =========================================
 def build_faiss_index():
     if not os.path.exists(DATA_DIR):
@@ -64,8 +68,11 @@ def build_faiss_index():
         return False
 
     documents = []
-    for f in files:
-        loader = TextLoader(os.path.join(DATA_DIR, f), encoding="utf-8")
+    for file in files:
+        loader = TextLoader(
+            os.path.join(DATA_DIR, file),
+            encoding="utf-8"
+        )
         documents.extend(loader.load())
 
     splitter = RecursiveCharacterTextSplitter(
@@ -84,6 +91,7 @@ def build_faiss_index():
 def load_index():
     if not os.path.exists(INDEX_PATH):
         return None
+
     embeddings = get_embeddings()
     return FAISS.load_local(
         INDEX_PATH,
@@ -101,23 +109,10 @@ def search_docs(question):
 
 
 # =========================================
-# INDEX STATUS
+# AUTO BUILD INDEX (SILENT)
 # =========================================
-index_exists = os.path.exists(INDEX_PATH)
-
-st.markdown(f"""
-<div style="
-    background:#FFF4D1;
-    padding:15px;
-    border:1px solid #FFE19C;
-    border-radius:8px;
-    color:#444;
-    font-size:16px;
-    margin-bottom:15px;">
-    📁 <b>DATA DIR:</b> data <br>
-    {'🟢 Index is ready.' if index_exists else '🟡 No index found — add .txt files and click Rebuild Index.'}
-</div>
-""", unsafe_allow_html=True)
+if not os.path.exists(INDEX_PATH):
+    build_faiss_index()
 
 
 # =========================================
@@ -129,9 +124,7 @@ if mode == "General":
     question = st.text_input("Question")
 
     if st.button("Ask"):
-        if not index_exists:
-            st.error("⚠ Please rebuild index first.")
-        elif not question.strip():
+        if not question.strip():
             st.warning("Please enter a question.")
         else:
             docs = search_docs(question)
@@ -142,24 +135,27 @@ if mode == "General":
                 context = "\n\n".join(d.page_content for d in docs)
                 st.markdown(
                     f"""
-                    <div style='background:#F7F7F7; padding:15px;
-                    border-radius:8px; border:1px solid #DDD; margin-top:15px;'>
-                        <b>Relevant content:</b><br>{context}
+                    <div style="
+                        background:#F7F7F7;
+                        padding:15px;
+                        border-radius:8px;
+                        border:1px solid #DDD;
+                        margin-top:15px;">
+                        <b>Relevant content:</b><br><br>
+                        {context}
                     </div>
                     """,
                     unsafe_allow_html=True
                 )
 
-    if st.button("Rebuild Index"):
-        with st.spinner("Building free FAISS index..."):
-            success = build_faiss_index()
-            if success:
-                st.success("Index built successfully! Please refresh the page.")
-            else:
-                st.error("No .txt files found in data folder.")
-
 elif mode == "Bayut":
-    st.markdown("<h2 style='color:#0E8A6D;'>Bayut Module (coming soon)</h2>", unsafe_allow_html=True)
+    st.markdown(
+        "<h2 style='color:#0E8A6D;'>Bayut Module (coming soon)</h2>",
+        unsafe_allow_html=True
+    )
 
 elif mode == "Dubizzle":
-    st.markdown("<h2 style='color:#D71920;'>Dubizzle Module (coming soon)</h2>", unsafe_allow_html=True)
+    st.markdown(
+        "<h2 style='color:#D71920;'>Dubizzle Module (coming soon)</h2>",
+        unsafe_allow_html=True
+    )
