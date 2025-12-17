@@ -5,6 +5,8 @@ from langchain_community.vectorstores import FAISS
 from langchain_community.document_loaders import TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain.llms import HuggingFacePipeline
+from transformers import pipeline
 
 
 # =========================================
@@ -33,17 +35,17 @@ st.markdown(
         AI Content Assistant
     </h1>
     <p style='text-align:center; color:#666;'>
-        Fast internal knowledge search powered by internal content (.txt files in /data)
+        Smart internal knowledge assistant powered by internal SOPs and documents
     </p>
     """,
     unsafe_allow_html=True
 )
 
 # =========================================
-# PATHS (CLOUD SAFE)
+# PATHS
 # =========================================
-DATA_DIR = "data"                 # read-only
-INDEX_PATH = "/tmp/faiss_index"   # writable
+DATA_DIR = "data"
+INDEX_PATH = "/tmp/faiss_index"
 
 
 # =========================================
@@ -57,7 +59,21 @@ def get_embeddings():
 
 
 # =========================================
-# FAISS FUNCTIONS
+# LLM (FREE, SMART Q&A)
+# =========================================
+@st.cache_resource
+def get_llm():
+    pipe = pipeline(
+        "text2text-generation",
+        model="google/flan-t5-base",
+        max_length=512,
+        temperature=0
+    )
+    return HuggingFacePipeline(pipeline=pipe)
+
+
+# =========================================
+# FAISS INDEX
 # =========================================
 def build_faiss_index():
     if not os.path.exists(DATA_DIR):
@@ -104,8 +120,37 @@ def search_docs(question):
     index = load_index()
     if index is None:
         return []
-
     return index.similarity_search(question, k=5)
+
+
+# =========================================
+# SMART ANSWER GENERATION
+# =========================================
+def generate_answer(question, docs):
+    llm = get_llm()
+
+    context = "\n\n".join(d.page_content for d in docs)
+
+    prompt = f"""
+You are an internal Bayut & Dubizzle AI assistant.
+
+Your task:
+- Answer the question clearly and professionally
+- Explain in your own words
+- Do NOT list SOP questions or sections
+- Do NOT copy text verbatim
+- Use the context ONLY
+
+Context:
+{context}
+
+Question:
+{question}
+
+Answer:
+"""
+
+    return llm(prompt)
 
 
 # =========================================
@@ -130,19 +175,21 @@ if mode == "General":
             docs = search_docs(question)
 
             if not docs:
-                st.info("No relevant content found.")
+                st.info("No relevant internal content found.")
             else:
-                context = "\n\n".join(d.page_content for d in docs)
+                answer = generate_answer(question, docs)
+
                 st.markdown(
                     f"""
                     <div style="
                         background:#F7F7F7;
-                        padding:15px;
+                        padding:18px;
                         border-radius:8px;
                         border:1px solid #DDD;
-                        margin-top:15px;">
-                        <b>Relevant content:</b><br><br>
-                        {context}
+                        margin-top:15px;
+                        font-size:16px;
+                        line-height:1.6;">
+                        {answer}
                     </div>
                     """,
                     unsafe_allow_html=True
