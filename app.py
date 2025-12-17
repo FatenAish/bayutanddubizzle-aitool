@@ -139,7 +139,7 @@ index = load_or_build_index()
 
 
 # =========================================
-# ULTRA-FAST ANSWER (NO LLM)
+# CLEANING / POST-PROCESS
 # =========================================
 STOPWORDS = {
     "what", "is", "are", "the", "a", "an", "and", "or", "to", "of", "in", "on", "for",
@@ -149,13 +149,37 @@ STOPWORDS = {
 
 def clean_text(s: str) -> str:
     s = re.sub(r"\s+", " ", s).strip()
-    s = re.sub(r"\bQ\d+\s*[-–:]\s*", "", s, flags=re.IGNORECASE)
+    s = re.sub(r"\bQ\d+\s*[-–:]\s*", "", s, flags=re.IGNORECASE)  # remove Q1/Q2 labels
     return s
+
+def postprocess_answer(answer: str, question: str) -> str:
+    a = clean_text(answer)
+
+    # remove leading numbering like "1) " or "1 - "
+    a = re.sub(r"^\s*\d+\s*[\)\-–:]\s*", "", a)
+
+    # if SOP title is stuck at the beginning, drop it (common pattern contains "SOP")
+    # Example: "Bayut – ... SOP It is a structured process..."
+    if "SOP" in a[:140] and "." in a:
+        # keep everything after first period
+        a = a.split(".", 1)[1].strip()
+
+    # remove repeated question if it appears inside answer
+    q = clean_text(question)
+    if q and q.lower() in a.lower():
+        a = re.sub(re.escape(q), "", a, flags=re.IGNORECASE).strip()
+
+    return a.strip()
+
 
 def split_sentences(text: str):
     parts = re.split(r"(?<=[\.\?\!])\s+", text)
     return [p.strip() for p in parts if p.strip()]
 
+
+# =========================================
+# ULTRA-FAST ANSWER (NO LLM)
+# =========================================
 def extractive_answer(question: str, docs) -> str:
     if not docs:
         return "No relevant internal content found."
@@ -168,7 +192,7 @@ def extractive_answer(question: str, docs) -> str:
 
     sents = split_sentences(text)
     if not sents:
-        return text[:500]
+        return postprocess_answer(text[:500], question)
 
     scored = []
     for s in sents:
@@ -182,12 +206,7 @@ def extractive_answer(question: str, docs) -> str:
         best = sents[:2]
 
     answer = " ".join(best)
-
-    # Extra cleanup to avoid “SOP title + question repeated”
-    answer = re.sub(r"\bWhat is\b.*?\?", "", answer, flags=re.IGNORECASE).strip()
-    answer = clean_text(answer)
-
-    return answer[:900]
+    return postprocess_answer(answer[:900], question)
 
 
 # =========================================
@@ -195,7 +214,6 @@ def extractive_answer(question: str, docs) -> str:
 # =========================================
 @st.cache_resource
 def get_llm():
-    # small + short output = faster (still slower than Ultra-Fast)
     pipe = pipeline(
         "text2text-generation",
         model="google/flan-t5-small",
@@ -207,6 +225,7 @@ def get_llm():
 @st.cache_data(show_spinner=False)
 def cached_llm_answer(question: str, context: str) -> str:
     llm = get_llm()
+
     prompt = f"""
 Answer clearly and briefly using ONLY the context.
 Do not repeat the question.
@@ -242,7 +261,7 @@ def thinking_answer(question: str, docs) -> str:
         return "No relevant internal content found."
     context = "\n".join(clean_text(d.page_content) for d in docs)
     context = context[:1600]
-    return cached_llm_answer(question, context)
+    return postprocess_answer(cached_llm_answer(question, context), question)
 
 
 # =========================================
@@ -254,9 +273,9 @@ if mode == "General":
     with st.form("ask_form", clear_on_submit=True):
         question = st.text_input("Question", placeholder="Type your question and press Enter…")
 
-        # Tight buttons beside each other on the left
+        # tight buttons beside each other on the left
         st.markdown("<div class='tight-cols'>", unsafe_allow_html=True)
-        b1, b2, spacer = st.columns([1.1, 1.6, 8.3])
+        b1, b2, spacer = st.columns([1.0, 1.4, 9.0])
         with b1:
             ask = st.form_submit_button("Ask")
         with b2:
@@ -281,11 +300,11 @@ if mode == "General":
                 with st.spinner("Thinking..."):
                     answer = thinking_answer(question, docs)
 
-            # ✅ Save ONLY the answer (no question)
-            st.session_state.chat.append({"a": answer})
+            # ✅ Save JUST question + answer
+            st.session_state.chat.append({"q": question.strip(), "a": answer})
             st.rerun()
 
-    # ✅ Show ONLY answers (no Q:)
+    # ✅ Show JUST question then answer
     for item in reversed(st.session_state.chat):
         st.markdown(
             f"""
@@ -295,6 +314,7 @@ if mode == "General":
                 border-radius:10px;
                 border:1px solid #EEE;
                 margin-top:12px;">
+                <b>{item["q"]}</b><br><br>
                 {item["a"]}
             </div>
             """,
