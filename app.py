@@ -1,3 +1,4 @@
+cat > app.py << 'EOF'
 import os
 import re
 import streamlit as st
@@ -50,7 +51,7 @@ st.markdown(
 # =========================================
 # PATHS (ONLY DATA CHANGES)
 # =========================================
-def get_paths(mode):
+def get_paths(mode: str):
     base = "/tmp/faiss"
     if mode == "Bayut":
         return "data/bayut", f"{base}_bayut"
@@ -61,7 +62,7 @@ def get_paths(mode):
 DATA_DIR, INDEX_PATH = get_paths(mode)
 
 # =========================================
-# EMBEDDINGS (OPENAI – NO HF)
+# EMBEDDINGS (OPENAI)
 # =========================================
 @st.cache_resource
 def get_embeddings():
@@ -71,11 +72,11 @@ def get_embeddings():
 # INDEX
 # =========================================
 @st.cache_resource
-def load_or_build_index(data_dir, index_path):
+def load_or_build_index(data_dir: str, index_path: str):
     embeddings = get_embeddings()
 
     if os.path.exists(index_path):
-        return FAISS.load_local(index_path, embeddings)
+        return FAISS.load_local(index_path, embeddings, allow_dangerous_deserialization=True)
 
     if not os.path.exists(data_dir):
         return None
@@ -104,7 +105,7 @@ index = load_or_build_index(DATA_DIR, INDEX_PATH)
 # =========================================
 # ULTRA FAST
 # =========================================
-def extractive_answer(question, docs):
+def extractive_answer(question: str, docs):
     if not docs:
         return "No internal content found."
 
@@ -127,7 +128,7 @@ def extractive_answer(question, docs):
 def get_llm():
     return ChatOpenAI(model="gpt-4o-mini", temperature=0)
 
-def thinking_answer(question, docs):
+def thinking_answer(question: str, docs):
     if not docs:
         return "No internal content found."
 
@@ -193,3 +194,4 @@ if st.session_state.last_q:
         """,
         unsafe_allow_html=True
     )
+EOF
