@@ -28,7 +28,8 @@ if "last_a" not in st.session_state:
 # SIDEBAR
 # =========================================
 with st.sidebar:
-    mode = st.radio("Select module", ["General", "Bayut", "Dubizzle"])
+    st.header("Select an option")
+    mode = st.radio("", ["General", "Bayut", "Dubizzle"])
     answer_mode = st.radio("Answer mode", ["Ultra-Fast", "Thinking"], index=0)
 
 # =========================================
@@ -36,30 +37,33 @@ with st.sidebar:
 # =========================================
 st.markdown(
     """
-    <h1 style="text-align:center;">
+    <h1 style="text-align:center; font-weight:800;">
       <span style="color:#0E8A6D;">Bayut</span> &
       <span style="color:#D71920;">Dubizzle</span>
       AI Content Assistant
     </h1>
+    <p style="text-align:center; color:#666;">Fast internal assistant</p>
     """,
     unsafe_allow_html=True
 )
 
 # =========================================
-# PATHS
+# PATHS (ONLY DIFFERENCE BETWEEN MODULES)
 # =========================================
-def get_paths(mode):
-    base = "/tmp/faiss"
-    if mode == "Bayut":
+def get_paths(selected_mode):
+    base = "/tmp/faiss_index"
+
+    if selected_mode == "Bayut":
         return "data/bayut", f"{base}_bayut"
-    elif mode == "Dubizzle":
+    elif selected_mode == "Dubizzle":
         return "data/dubizzle", f"{base}_dubizzle"
-    return "data/general", f"{base}_general"
+    else:
+        return "data/general", f"{base}_general"
 
 DATA_DIR, INDEX_PATH = get_paths(mode)
 
 # =========================================
-# EMBEDDINGS (OPENAI – SAFE)
+# EMBEDDINGS (OPENAI)
 # =========================================
 @st.cache_resource
 def get_embeddings():
@@ -151,14 +155,14 @@ Question:
     return llm.invoke(prompt).content.strip()
 
 # =========================================
-# UI
+# MAIN UI (SAME FOR ALL MODULES)
 # =========================================
-st.subheader(f"Ask a {mode} question")
+st.subheader("Ask your internal question")
 
-with st.form("ask", clear_on_submit=True):
-    q = st.text_input("Question")
+with st.form("ask_form", clear_on_submit=True):
+    question = st.text_input("Question", placeholder="Type your question and press Enter…")
     ask = st.form_submit_button("Ask")
-    clear = st.form_submit_button("Clear")
+    clear = st.form_submit_button("Clear chat")
 
 if clear:
     st.session_state.last_q = ""
@@ -166,21 +170,21 @@ if clear:
     st.rerun()
 
 if ask:
-    if not q.strip():
-        st.warning("Enter a question.")
+    if not question.strip():
+        st.warning("Please enter a question.")
     elif index is None:
-        st.error("Index not available.")
+        st.error("No data found for this module.")
     else:
-        docs = index.similarity_search(q, k=2)
+        docs = index.similarity_search(question, k=2)
 
         if answer_mode == "Ultra-Fast":
-            ans = extractive_answer(q, docs)
+            answer = extractive_answer(question, docs)
         else:
             with st.spinner("Thinking..."):
-                ans = thinking_answer(q, docs)
+                answer = thinking_answer(question, docs)
 
-        st.session_state.last_q = q
-        st.session_state.last_a = ans
+        st.session_state.last_q = question
+        st.session_state.last_a = answer
         st.rerun()
 
 if st.session_state.last_q:
