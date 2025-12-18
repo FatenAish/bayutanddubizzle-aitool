@@ -48,7 +48,7 @@ st.markdown(
 )
 
 # =========================================
-# PATHS (ONLY THING MODE CHANGES)
+# PATHS (ONLY DATA CHANGES)
 # =========================================
 def get_paths(mode):
     base = "/tmp/faiss"
@@ -61,7 +61,7 @@ def get_paths(mode):
 DATA_DIR, INDEX_PATH = get_paths(mode)
 
 # =========================================
-# EMBEDDINGS
+# EMBEDDINGS (OPENAI – NO HF)
 # =========================================
 @st.cache_resource
 def get_embeddings():
@@ -148,9 +148,9 @@ Question:
     return llm.invoke(prompt).content.strip()
 
 # =========================================
-# UI (ONE UI FOR ALL MODES)
+# UI (SAME FOR ALL MODULES)
 # =========================================
-st.subheader(f"Ask your internal question")
+st.subheader("Ask your internal question")
 
 with st.form("ask", clear_on_submit=True):
     q = st.text_input("Question", placeholder="Type your question and press Enter…")
@@ -172,6 +172,7 @@ if ask:
         st.error("Index not available.")
     else:
         docs = index.similarity_search(q, k=2)
+
         if answer_mode == "Ultra-Fast":
             ans = extractive_answer(q, docs)
         else:
