@@ -53,11 +53,9 @@ st.markdown(
 # =========================================
 def get_paths(mode: str):
     base = "/tmp/faiss"
-    if mode == "Bayut":
-        return "data/bayut", f"{base}_bayut"
-    if mode == "Dubizzle":
-        return "data/dubizzle", f"{base}_dubizzle"
-    return "data/general", f"{base}_general"
+def get_paths(mode: str):
+    # ALL modules use the SAME data and SAME index
+    return "data/general", "/tmp/faiss_general"
 
 DATA_DIR, INDEX_PATH = get_paths(mode)
 
