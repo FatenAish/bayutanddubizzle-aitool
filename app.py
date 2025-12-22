@@ -1,147 +1,219 @@
 import os
+import re
 import streamlit as st
+from langchain_community.vectorstores import FAISS
+from langchain_community.document_loaders import TextLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_community.embeddings import HuggingFaceEmbeddings
 
 # ===============================
-# CONFIG
+# PAGE CONFIG
 # ===============================
-st.set_page_config(page_title="Internal AI Assistant", layout="wide")
+st.set_page_config(
+    page_title="Bayut & dubizzle Internal Assistant",
+    layout="wide"
+)
 
+# ===============================
+# PATHS
+# ===============================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 
 # ===============================
 # SESSION STATE
 # ===============================
-if "chat" not in st.session_state:
-    st.session_state.chat = []
+st.session_state.setdefault("chat", {
+    "General": [],
+    "Bayut": [],
+    "dubizzle": []
+})
 
 # ===============================
-# HELPERS
+# SIDEBAR
 # ===============================
-def is_download_request(q: str) -> bool:
-    q = q.lower()
-    triggers = ["download", "sop", "file", "send", "give me"]
-    return any(t in q for t in triggers)
+with st.sidebar:
+    st.header("Select tool")
+    tool_mode = st.radio("", ["General", "Bayut", "dubizzle"], index=0)
 
-def find_matching_sop(q: str):
-    q = q.lower()
-    for f in os.listdir(DATA_DIR):
-        if f.lower().endswith(".txt") and "qa" not in f.lower():
-            if any(word in f.lower() for word in q.split()):
-                return f
-    return None
+    st.markdown("---")
+    answer_mode = st.radio("Answer mode", ["Ultra-Fast", "Thinking"], index=0)
 
-def load_qa_pairs():
-    pairs = []
+# ===============================
+# TITLE
+# ===============================
+st.markdown(
+    """
+    <h1 style="text-align:center;font-weight:800;">
+      <span style="color:#0E8A6D;">Bayut</span> &
+      <span style="color:#D71920;">dubizzle</span>
+      AI Content Assistant
+    </h1>
+    <p style="text-align:center;color:#666;">Internal Q&A Assistant</p>
+    """,
+    unsafe_allow_html=True
+)
+
+# ===============================
+# QA FILE SELECTION
+# ===============================
+def get_qa_files(mode):
+    files = []
     for f in os.listdir(DATA_DIR):
-        if not f.lower().endswith("-qa.txt"):
+        if not f.endswith("-QA.txt"):
             continue
-        with open(os.path.join(DATA_DIR, f), encoding="utf-8") as file:
-            lines = file.read().splitlines()
 
-        q, a = None, []
-        for line in lines:
-            if line.startswith("Q:"):
-                if q and a:
-                    pairs.append((q, " ".join(a)))
-                q = line.replace("Q:", "").strip()
-                a = []
-            elif line.startswith("A:"):
-                a.append(line.replace("A:", "").strip())
-            elif q:
-                a.append(line.strip())
+        lf = f.lower()
+        if mode == "Bayut" and not lf.startswith("bayut"):
+            continue
+        if mode == "dubizzle" and not lf.startswith("dubizzle"):
+            continue
 
-        if q and a:
-            pairs.append((q, " ".join(a)))
-
-    return pairs
-
-def answer_from_qa(question: str):
-    question_l = question.lower()
-    qa = load_qa_pairs()
-
-    for q, a in qa:
-        if question_l in q.lower():
-            return a
-
-    words = set(question_l.split())
-    scored = []
-    for q, a in qa:
-        score = len(words & set(q.lower().split()))
-        if score > 0:
-            scored.append((score, a))
-
-    if scored:
-        return sorted(scored, reverse=True)[0][1]
-
-    return "I don’t have a clear answer for this in the available Q&A."
+        files.append(os.path.join(DATA_DIR, f))
+    return files
 
 # ===============================
-# TITLE (UNCHANGED)
+# BUILD INDEX (LOCAL)
 # ===============================
-st.markdown("""
-<h1 style="text-align:center;font-weight:800;">Internal AI Assistant</h1>
-<p style="text-align:center;color:#666;">Fast internal assistant</p>
-""", unsafe_allow_html=True)
+@st.cache_resource
+def load_index(mode):
+    qa_files = get_qa_files(mode)
+    if not qa_files:
+        return None
+
+    docs = []
+    for f in qa_files:
+        docs.extend(TextLoader(f, encoding="utf-8").load())
+
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=900,
+        chunk_overlap=100
+    )
+    chunks = splitter.split_documents(docs)
+
+    embeddings = HuggingFaceEmbeddings(
+        model_name="sentence-transformers/all-MiniLM-L6-v2"
+    )
+
+    return FAISS.from_documents(chunks, embeddings)
 
 # ===============================
-# INPUT (UNCHANGED LAYOUT)
+# STRICT ANSWER EXTRACTION (CRITICAL FIX)
 # ===============================
+def extract_answer_only(question, docs):
+    q_words = set(re.findall(r"\w+", question.lower()))
+
+    best_score = 0
+    best_answer = None
+
+    for d in docs:
+        text = d.page_content
+
+        # Split file into Q&A blocks
+        blocks = re.split(r"\nQ:\s*", text)
+        for block in blocks:
+            if "\nA:" not in block:
+                continue
+
+            q_part, a_part = block.split("\nA:", 1)
+
+            q_text = q_part.strip().lower()
+            a_text = a_part.strip()
+
+            # Remove anything after next Q:
+            a_text = re.split(r"\nQ:\s*", a_text)[0].strip()
+
+            score = len(q_words & set(re.findall(r"\w+", q_text)))
+            if score > best_score:
+                best_score = score
+                best_answer = a_text
+
+    return best_answer or "I couldn’t find a clear answer to that."
+
+# ===============================
+# THINKING MODE (CHAT-AWARE, STILL STRICT)
+# ===============================
+def thinking_answer(question, docs, history):
+    q_words = set(re.findall(r"\w+", question.lower()))
+    prev_words = set()
+
+    if history:
+        prev_words = set(re.findall(r"\w+", history[-1]["q"].lower()))
+
+    best_score = 0
+    best_answer = None
+
+    for d in docs:
+        text = d.page_content
+        blocks = re.split(r"\nQ:\s*", text)
+
+        for block in blocks:
+            if "\nA:" not in block:
+                continue
+
+            q_part, a_part = block.split("\nA:", 1)
+            q_text = q_part.lower()
+            a_text = re.split(r"\nQ:\s*", a_part)[0].strip()
+
+            score = len(q_words & set(re.findall(r"\w+", q_text)))
+            score += len(prev_words & set(re.findall(r"\w+", q_text)))
+
+            if score > best_score:
+                best_score = score
+                best_answer = a_text
+
+    return best_answer or "I couldn’t find a clear answer to that."
+
+# ===============================
+# UI – QUESTION
+# ===============================
+st.subheader(f"{tool_mode} Assistant")
+
 with st.form("ask_form", clear_on_submit=True):
     q = st.text_input("Ask a question")
-
-    col1, col2, col3 = st.columns([2, 1, 1])
-    ask = col2.form_submit_button("Ask")
-    clear = col3.form_submit_button("Clear chat")
+    col1, col2 = st.columns([1, 1])
+    ask = col1.form_submit_button("Ask")
+    clear = col2.form_submit_button("Clear chat")
 
 # ===============================
-# ACTIONS
+# CLEAR CHAT
+# ===============================
+if clear:
+    st.session_state.chat[tool_mode] = []
+    st.rerun()
+
+# ===============================
+# HANDLE QUESTION
 # ===============================
 if ask and q.strip():
-    if is_download_request(q):
-        sop = find_matching_sop(q)
-        if sop:
-            st.session_state.chat.append({
-                "q": q,
-                "a": f"📥 You can download the SOP below:",
-                "file": sop
-            })
-        else:
-            st.session_state.chat.append({
-                "q": q,
-                "a": "I couldn’t find a matching SOP to download."
-            })
+    index = load_index(tool_mode)
+    if index is None:
+        st.error("No Q&A files found.")
+        st.stop()
+
+    docs = index.similarity_search(q, k=5)
+
+    if answer_mode == "Ultra-Fast":
+        answer = extract_answer_only(q, docs)
     else:
-        answer = answer_from_qa(q)
-        st.session_state.chat.append({"q": q, "a": answer})
+        answer = thinking_answer(q, docs, st.session_state.chat[tool_mode])
 
-    st.rerun()
-
-if clear:
-    st.session_state.chat = []
+    st.session_state.chat[tool_mode].append({
+        "q": q,
+        "a": answer
+    })
     st.rerun()
 
 # ===============================
-# CHAT RENDER (DESIGN PRESERVED)
+# CHAT HISTORY (PER TOOL)
 # ===============================
-for item in st.session_state.chat:
-    st.markdown(f"""
-    <div style="background:#DCF8C6;padding:12px;border-radius:12px;margin-bottom:6px;">
-    {item['q']}
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.markdown(f"""
-    <div style="background:#F1F0F0;padding:12px;border-radius:12px;margin-bottom:12px;">
-    {item['a']}
-    </div>
-    """, unsafe_allow_html=True)
-
-    if "file" in item:
-        with open(os.path.join(DATA_DIR, item["file"]), "rb") as f:
-            st.download_button(
-                label=f"Download {item['file']}",
-                data=f,
-                file_name=item["file"],
-                mime="text/plain"
-            )
+for item in st.session_state.chat[tool_mode]:
+    st.markdown(
+        f"""
+        <div style="border:1px solid #ddd;padding:12px;border-radius:8px;margin-bottom:10px;">
+        <b>Q:</b> {item['q']}<br><br>
+        <b>A:</b> {item['a']}
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
