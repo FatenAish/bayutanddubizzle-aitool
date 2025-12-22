@@ -1,0 +1,70 @@
+Bayut Social Media Posting – Q&A
+
+Q: What is the Bayut Social Media Posting process?
+A: It is the end-to-end process for planning, preparing, reviewing, approving, and publishing organic content on Bayut’s Instagram channels to ensure quality, consistency, and timely publishing. fileciteturn5file0
+
+Q: What is the purpose of the Social Media Posting SOP?
+A: The purpose is to standardize how social media content is planned, captioned, approved, and published while maintaining brand consistency and performance quality. fileciteturn5file0
+
+Q: Which content is included in this process?
+A:
+- Organic posts on Bayut social channels (feed, reels, stories)
+- Monthly content calendar planning
+- Caption writing, approvals, and publishing fileciteturn5file0
+
+Q: Which teams are involved in social media posting?
+A:
+- Content Team
+- Social Media Team
+- Design Team fileciteturn5file0
+
+Q: Who is responsible for what?
+A:
+- Content Team: prepares the content calendar, suggests ideas, and writes captions
+- Social Media Team: prepares briefs, coordinates with designers, schedules and publishes posts, and monitors performance
+- Design Team: creates visuals based on approved briefs and platform specifications fileciteturn5file0
+
+Q: Who are the Points of Contact (POCs)?
+A:
+- Content Team AR: Malaak Is-Haqat | AR Approval: Areej Tawfiq Abu Reida
+- Content Team EN: Fatima Khanum | EN Approval: Sabeeh Rizvi
+- Final Approval: Sarah Alnawah
+- Social Media Team: Saima Abid, Emma Dourado fileciteturn5file0
+
+Q: How often is the social media calendar prepared?
+A: A monthly content calendar is prepared before the 10th of each month for the upcoming month and shared with the Social Media team after approval. fileciteturn5file0
+
+Q: What does the social media calendar include?
+A:
+- Month
+- Theme or campaign
+- Language
+- Priority level
+- Post details and link
+- Captions (if required)
+The calendar includes up to 20 post ideas, from which the Social Media team selects based on their publishing schedule. fileciteturn5file0
+
+Q: How does the social media content planning process work?
+A:
+1. Content Team fills in the Social Media Calendar sheet with all required details before the 10th
+2. Social Media Team reviews and selects posts based on scheduling needs fileciteturn5file0
+
+Q: How are creative requests handled?
+A:
+1. Social Media Team prepares a creative brief including title, caption, visual concept, and platform dimensions
+2. Approval is obtained from Areej Tawfiq Abu Reida and Sarah Alnawah
+3. The approved brief is uploaded to the Design Request Form
+4. Designers are given access to start creative development fileciteturn5file0
+
+Q: How are creatives approved and published?
+A:
+1. Design Team secures final design approval
+2. Content Team uploads approved creatives to Airtable
+3. Social Media Team schedules or publishes the post on Instagram fileciteturn5file0
+
+Q: What tools are used for social media posting?
+A:
+- Bayut Social Media Calendar.xlsx
+- Shutterstock (image sourcing)
+- Design Request Form (Airtable)
+- Brief templates for Stories, MyBayut posts, Market Trends, Area Guides, and Building Guides fileciteturn5file0

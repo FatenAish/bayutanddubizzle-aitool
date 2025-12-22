@@ -1,0 +1,53 @@
+Bayut Algolia Locations – Q&A
+
+Q: What are Algolia Locations?
+A: Algolia Locations are tags added to blog articles to associate content with specific geographic areas, helping improve search accuracy and location-based content discovery.
+
+Q: What is the purpose of Algolia Locations?
+A: The purpose is to ensure all published articles have accurate location tags so they are searchable, properly indexed, and ready for migration to the Strapi system. fileciteturn3file0
+
+Q: Which articles require Algolia Locations?
+A:
+- All published articles in WordPress
+- Both new and existing articles that reference a specific emirate or area
+
+Q: Which articles do NOT require Algolia Locations?
+A:
+- Unpublished or draft articles
+- Articles outside WordPress (test or training)
+- Discussion articles or content covering the entire UAE without a specific location fileciteturn3file0
+
+Q: Who is responsible for Algolia Locations?
+A:
+- Sub-editor: ensures every article has an Algolia Location and updates the tracking sheet
+- Content Team: adds locations to newly published articles fileciteturn3file0
+
+Q: Who are the Points of Contact (POCs)?
+A:
+- Content Marketing Team (EN): Sabeeh Rizvi
+- Content Marketing Team (AR): Mohammad Alshkoor fileciteturn3file0
+
+Q: How often are Algolia Locations reviewed?
+A: Algolia Locations are reviewed weekly, every Sunday. fileciteturn3file0
+
+Q: How do we add or verify Algolia Locations?
+A:
+1. Open WordPress and launch the Algolia Locations Tool
+2. Open the Articles Algolia Locations Google Sheet
+3. Add newly published articles to the sheet
+4. Verify that the correct location is added
+5. If missing, manually add the location using the Algolia tool
+6. If the location does not exist, raise a request through Product or Tech fileciteturn3file0
+
+Q: How are updated articles reviewed?
+A:
+1. Review all articles updated during the week
+2. Ensure each article includes an Algolia Location
+3. Confirm each article is listed in the Google Sheet
+4. Escalate repeated omissions to the line manager fileciteturn3file0
+
+Q: What tools are used for Algolia Locations?
+A:
+- Algolia Locations Tool (for adding and verifying locations)
+- Articles Algolia Locations Google Sheet (for tracking)
+- WordPress Dashboard (for article updates) fileciteturn3file0

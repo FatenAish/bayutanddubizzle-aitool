@@ -1,0 +1,61 @@
+Bayut PM Campaigns – Q&A
+
+Q: What are PM Campaigns at Bayut?
+A: PM Campaigns are paid marketing campaigns planned and executed to drive traffic and awareness for Bayut content and priority pages, while aligning with budget and business goals.
+
+Q: What is the purpose of PM Campaigns?
+A: The purpose is to standardize how paid campaigns are planned, produced, launched, and tracked across Content, Design, and Performance teams.
+
+Q: Which teams are involved in PM Campaigns?
+A: PM Campaigns involve the Content Team, Design Team, and Performance Marketing Team.
+
+Q: What types of campaigns are covered?
+A:
+- Traffic campaigns (FB Display + SEM DSA for Market Trends)
+- Image Ads and Carousel Ads
+- Budget assignment, tracking, and reporting
+
+Q: How often are PM Campaigns launched?
+A: PM Campaigns are launched monthly, depending on budget availability.
+
+Q: Who is responsible for PM Campaigns?
+A:
+- Content Marketing Team: suggests topics, writes ad copy, manages workflow, and approvals
+- Design Team: creates campaign creatives
+- Performance Marketing Team: launches campaigns, sets targeting and budgets, and shares results
+
+Q: Who are the Points of Contact (POCs)?
+A:
+- Content Team (EN): Muhammad Shereyar, Sabeeh Rizvi
+- Content Team (AR): Malaak Is-Haqat, Areej Tawfiq Abu Reida
+- Final Approval: Sarah Alnawah
+- Performance Marketing: Omar Shahid
+
+Q: What are the main objectives of PM Campaigns?
+A:
+- Traffic: drive sessions to content and priority pages
+- Awareness: increase brand visibility for new projects or services
+
+Q: Which channels and formats are allowed?
+A:
+- FB Display: Image Ads and Carousel Ads
+- SEM – DSA (Market Trends): feed-based ads promoting market trends articles
+
+Q: How is the PM budget managed?
+A:
+- The annual PM budget is confirmed by Performance Marketing
+- The full yearly budget must be consumed within the year
+- Budget and campaign data are tracked in the “PM Content Campaigns” sheet
+
+Q: How do PM Campaigns work step by step?
+A:
+1. Performance Marketing confirms the budget for the cycle
+2. Content Team sets objectives and selects channels
+3. Content team prepares ad copy and updates the campaign sheet
+4. Content is reviewed and approved
+5. Design team creates creatives via Airtable
+6. Ads are sent for marketing approval
+7. Content team requests launch from Performance Marketing via Slack
+8. Performance Marketing launches the campaigns
+9. Results are shared monthly and documented
+10. Year-end review ensures budget consumption and archives assets

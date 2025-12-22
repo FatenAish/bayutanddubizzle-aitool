@@ -1,0 +1,61 @@
+dubizzle PM Campaigns – Q&A
+
+Q: What are PM Campaigns at dubizzle?
+A: PM Campaigns are paid marketing campaigns planned and executed to drive traffic and awareness for dubizzle content and priority pages, while aligning with budget allocation and business goals. fileciteturn5file0
+
+Q: What is the purpose of PM Campaigns?
+A: The purpose is to standardize the planning, production, launch, and tracking of paid campaigns across Content, Design, and Performance Marketing teams. fileciteturn5file0
+
+Q: Which teams are involved in PM Campaigns?
+A: PM Campaigns involve the Content Team, Design Team, and Performance Marketing Team. fileciteturn5file0
+
+Q: What types of campaigns are covered?
+A:
+- Traffic campaigns (FB Display + SEM DSA for Market Trends)
+- Creative formats (Image Ads and Carousel Ads)
+- Budget allocation, tracking, and reporting fileciteturn5file0
+
+Q: How often are PM Campaigns launched?
+A: PM Campaigns are launched monthly, depending on budget availability. fileciteturn5file0
+
+Q: Who is responsible for PM Campaigns?
+A:
+- Content Marketing Team: suggests topics, writes ad copy, manages workflow, and approvals
+- Design Team: creates campaign creatives
+- Performance Marketing Team: launches campaigns, sets targeting and budgets, and shares results fileciteturn5file0
+
+Q: Who are the Points of Contact (POCs)?
+A:
+- Content Team EN: Quratulain Khan
+- Content Team AR: Odai Quraan
+- Final Approval: Sarah Alnawah
+- Performance Marketing: Youssef Hamdan fileciteturn5file0
+
+Q: What are the main objectives of PM Campaigns?
+A:
+- Traffic: drive sessions to content and priority pages
+- Awareness: increase brand visibility for new projects or services fileciteturn5file0
+
+Q: Which channels and formats are allowed?
+A:
+- FB Display: Image Ads and Carousel Ads
+- SEM – DSA (Market Trends): feed-based ads promoting market trends articles fileciteturn5file0
+
+Q: How is the PM budget managed?
+A:
+- Annual PM budget is confirmed by Performance Marketing
+- The yearly budget must be fully consumed within the year
+- All budget entries are tracked in the “PM Content Campaigns” sheet (budget tab) fileciteturn5file0
+
+Q: How do PM Campaigns work step by step?
+A:
+1. Performance Marketing confirms the budget for the cycle
+2. Content Team sets objectives and selects channels
+3. Content Team prepares ad copy and updates the campaign sheet
+4. Content is reviewed and approved by Sarah Alnawah
+5. Creatives are requested from the Design Team via Airtable
+6. Ads are sent for marketing approval
+7. Content Team requests launch from Performance Marketing via Slack (content-pm-collaboration2)
+8. Performance Marketing launches the campaigns
+9. Monthly results are requested and documented
+10. Year-end review ensures full budget consumption and asset archiving fileciteturn5file0
