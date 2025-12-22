@@ -7,7 +7,6 @@ from langchain_community.vectorstores import FAISS
 from langchain_community.document_loaders import TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_openai import ChatOpenAI
 
 # ===============================
 # PAGE CONFIG
@@ -42,11 +41,9 @@ with st.sidebar:
     st.header("Tool")
     tool_mode = st.radio("", TOOLS, index=0)
 
-    # 🔒 ENSURE TOOL KEYS ALWAYS EXIST (CRASH FIX)
-    if tool_mode not in st.session_state.chat:
-        st.session_state.chat[tool_mode] = []
-    if tool_mode not in st.session_state.topic:
-        st.session_state.topic[tool_mode] = ""
+    # always ensure keys exist
+    st.session_state.chat.setdefault(tool_mode, [])
+    st.session_state.topic.setdefault(tool_mode, "")
 
     st.markdown(" ")
     st.header("Answer mode")
@@ -74,20 +71,13 @@ st.markdown(
 )
 
 # ===============================
-# EMBEDDINGS
+# EMBEDDINGS (LOCAL ONLY)
 # ===============================
 @st.cache_resource
 def get_embeddings():
     return HuggingFaceEmbeddings(
         model_name="sentence-transformers/all-MiniLM-L6-v2"
     )
-
-# ===============================
-# LLM (USED FOR SMART ANSWERS)
-# ===============================
-@st.cache_resource
-def get_llm():
-    return ChatOpenAI(model="gpt-4o-mini", temperature=0)
 
 # ===============================
 # FILE ROUTING
@@ -125,7 +115,7 @@ def load_index(mode: str):
             )
 
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000,
+        chunk_size=900,
         chunk_overlap=120
     )
     chunks = splitter.split_documents(docs)
@@ -146,16 +136,43 @@ def clean_query(q: str) -> str:
     return q.strip()
 
 # ===============================
-# SMART ANSWER (NOT SOP DUMP)
+# ULTRA-FAST SMART ANSWER (NO OPENAI)
 # ===============================
-def smart_answer(question, docs):
+def ultra_fast_answer(question, docs):
     if not docs:
-        return "I couldn’t find a clear answer in the available documentation."
+        return "I couldn’t find a clear answer in the documentation."
+
+    text = " ".join(d.page_content for d in docs)
+
+    # definition-style compression
+    sentences = re.split(r"(?<=[.!?])\s+", text)
+    key_sentences = [
+        s for s in sentences
+        if any(w in s.lower() for w in ["is", "are", "used", "purpose", "helps"])
+    ]
+
+    return " ".join(key_sentences[:2]).strip() or sentences[0].strip()
+
+# ===============================
+# THINKING ANSWER (OPTIONAL OPENAI)
+# ===============================
+def thinking_answer(question, docs):
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        return ultra_fast_answer(question, docs)
+
+    from langchain_openai import ChatOpenAI
+
+    llm = ChatOpenAI(
+        model="gpt-4o-mini",
+        temperature=0,
+        api_key=api_key
+    )
 
     context = " ".join(d.page_content for d in docs)[:1200]
 
     prompt = f"""
-Explain this clearly in 2–3 sentences.
+Explain clearly in 2–3 sentences.
 Do NOT copy SOP text.
 Answer like a colleague.
 
@@ -167,35 +184,41 @@ Context:
 
 Answer:
 """
-    return get_llm().invoke(prompt).content.strip()
+    return llm.invoke(prompt).content.strip()
 
 # ===============================
 # UI — ASK + CLEAR (SIDE BY SIDE)
 # ===============================
 st.subheader("Ask your internal question")
 
-col1, col2 = st.columns([5, 1])
+col1, col2, col3 = st.columns([6, 1, 1])
+
 with col1:
     q = st.text_input("Question", label_visibility="collapsed")
+
 with col2:
-    clear_clicked = st.button("🧹 Clear Chat")
+    ask_clicked = st.button("Ask")
+
+with col3:
+    clear_clicked = st.button("Clear")
 
 if clear_clicked:
     st.session_state.chat[tool_mode] = []
     st.session_state.topic[tool_mode] = ""
     st.rerun()
 
-ask_clicked = st.button("Ask")
-
 if ask_clicked:
     q_clean = clean_query(q)
 
-    # Topic-aware follow-up
     topic = st.session_state.topic[tool_mode]
     search_q = f"{topic}. {q_clean}" if topic else q_clean
 
     docs = index.similarity_search(search_q, k=4)
-    ans = smart_answer(q_clean, docs)
+
+    if answer_mode == "Ultra-Fast":
+        ans = ultra_fast_answer(q_clean, docs)
+    else:
+        ans = thinking_answer(q_clean, docs)
 
     st.session_state.topic[tool_mode] = q_clean
     st.session_state.chat[tool_mode].append({
@@ -204,7 +227,7 @@ if ask_clicked:
     })
 
 # ===============================
-# CHAT HISTORY (SAFE)
+# CHAT HISTORY (PER TOOL)
 # ===============================
 for item in st.session_state.chat.get(tool_mode, []):
     st.markdown(
