@@ -1,80 +1,58 @@
 import os
-import re
-import html
-import time
-import shutil
 import streamlit as st
 
-from langchain_community.vectorstores import FAISS
-from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_core.documents import Document
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-
 # =====================================================
-# 🔐 ACCESS CODE GATE (MUST BE FIRST – BEFORE ANY UI)
+# 🔐 HARD ACCESS GATE — ABSOLUTELY FIRST
 # =====================================================
-REQUIRE_CODE = os.getenv("REQUIRE_CODE", "0") == "1"
-ACCESS_CODE = os.getenv("ACCESS_CODE", "")
+REQUIRE_CODE = os.environ.get("REQUIRE_CODE") == "1"
+ACCESS_CODE = os.environ.get("ACCESS_CODE", "")
 
-if REQUIRE_CODE:
-    st.session_state.setdefault("unlocked", False)
+# Force session init
+if "unlocked" not in st.session_state:
+    st.session_state["unlocked"] = False
 
-    if not st.session_state.unlocked:
-        st.set_page_config(
-            page_title="Bayut & Dubizzle – Access Required",
-            layout="centered"
-        )
+if REQUIRE_CODE and not st.session_state["unlocked"]:
+    st.set_page_config(
+        page_title="Bayut & Dubizzle – Access Required",
+        layout="centered"
+    )
 
-        st.markdown(
-            """
-            <style>
-              .gate-wrap{
-                max-width:420px;
-                margin:120px auto;
-                text-align:center;
-                padding:24px 22px;
-                border:1px solid #E7E9EE;
-                border-radius:14px;
-                background:#fff;
-                box-shadow:0 6px 18px rgba(0,0,0,0.05);
-              }
-              .gate-title{ font-size:26px; font-weight:800; margin:0; }
-              .gate-sub{ color:#666; margin-top:6px; margin-bottom:18px; }
-              .gate-hint{ color:#888; font-size:12px; margin-top:10px; }
-              /* center input a bit */
-              div[data-testid="stTextInput"]{ max-width:340px; margin:0 auto; }
-              div[data-testid="stButton"]{ display:flex; justify-content:center; }
-            </style>
+    st.markdown(
+        """
+        <div style="
+            max-width:420px;
+            margin:120px auto;
+            text-align:center;
+            padding:26px 22px;
+            border:1px solid #E7E9EE;
+            border-radius:14px;
+            background:#fff;
+            box-shadow:0 6px 18px rgba(0,0,0,0.05);
+        ">
+          <h2>
+            <span style="color:#0E8A6D;">Bayut</span> &
+            <span style="color:#D71920;">Dubizzle</span>
+          </h2>
+          <p style="color:#666;margin-bottom:16px;">Internal AI Assistant</p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
-            <div class="gate-wrap">
-              <div class="gate-title">
-                <span style="color:#0E8A6D;">Bayut</span> &
-                <span style="color:#D71920;">Dubizzle</span>
-              </div>
-              <div class="gate-sub">Internal AI Assistant</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+    code = st.text_input(
+        "",
+        type="password",
+        placeholder="Enter access code"
+    )
 
-        code = st.text_input(
-            "Access code",
-            type="password",
-            label_visibility="collapsed",
-            placeholder="Enter access code"
-        )
+    if st.button("Unlock"):
+        if ACCESS_CODE and code == ACCESS_CODE:
+            st.session_state["unlocked"] = True
+            st.experimental_rerun()
+        else:
+            st.error("Wrong access code")
 
-        if st.button("Unlock"):
-            if ACCESS_CODE and code == ACCESS_CODE:
-                st.session_state.unlocked = True
-                st.rerun()
-            else:
-                st.error("Wrong access code")
-
-        # Optional tiny debug (won't leak the code)
-        # st.caption(f"REQUIRE_CODE={os.getenv('REQUIRE_CODE')} | ACCESS_CODE={'SET' if ACCESS_CODE else 'MISSING'}")
-
-        st.stop()
+    st.stop()
 
 # ===============================
 # PAGE CONFIG (MAIN APP)
