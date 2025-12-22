@@ -4,7 +4,7 @@ import streamlit as st
 from langchain_community.vectorstores import FAISS
 from langchain_community.document_loaders import TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_openai import OpenAIEmbeddings, ChatOpenAI
+from langchain_community.embeddings import HuggingFaceEmbeddings
 
 # ===============================
 # PAGE CONFIG
@@ -19,7 +19,6 @@ st.set_page_config(
 # ===============================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
-INDEX_DIR = "/tmp/qa_index"
 
 # ===============================
 # SESSION STATE
@@ -31,7 +30,7 @@ st.session_state.setdefault("chat", {
 })
 
 # ===============================
-# SIDEBAR – TOOL SELECTION
+# SIDEBAR
 # ===============================
 with st.sidebar:
     st.header("Select tool")
@@ -74,67 +73,59 @@ def get_qa_files(mode):
     return files
 
 # ===============================
-# BUILD / LOAD INDEX
+# BUILD INDEX (LOCAL)
 # ===============================
 @st.cache_resource
 def load_index(mode):
-    files = get_qa_files(mode)
-    if not files:
+    qa_files = get_qa_files(mode)
+    if not qa_files:
         return None
 
     docs = []
-    for f in files:
+    for f in qa_files:
         docs.extend(TextLoader(f, encoding="utf-8").load())
 
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=700,
+        chunk_size=800,
         chunk_overlap=100
     )
     chunks = splitter.split_documents(docs)
 
-    embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
-    index = FAISS.from_documents(chunks, embeddings)
-    return index
-
-# ===============================
-# LLM
-# ===============================
-@st.cache_resource
-def get_llm():
-    return ChatOpenAI(
-        model="gpt-4o-mini",
-        temperature=0
+    embeddings = HuggingFaceEmbeddings(
+        model_name="sentence-transformers/all-MiniLM-L6-v2"
     )
 
+    return FAISS.from_documents(chunks, embeddings)
+
 # ===============================
-# SMART ANSWER (CHATGPT STYLE)
+# ANSWERING LOGIC (NO AI)
 # ===============================
-def smart_answer(question, docs, history):
-    context = "\n\n".join(d.page_content for d in docs)[:2500]
-    history_text = "\n".join(
-        f"Q: {h['q']}\nA: {h['a']}"
-        for h in history[-3:]
-    )
+def clean_answer(text):
+    text = re.sub(r"^Q:\s*", "", text, flags=re.I)
+    text = re.sub(r"^A:\s*", "", text, flags=re.I)
+    return text.strip()
 
-    prompt = f"""
-You are an internal assistant.
-Answer clearly and concisely.
-Do NOT list SOP sections.
-Do NOT repeat the SOP text.
-Answer like a knowledgeable colleague.
+def thinking_answer(question, docs, history):
+    # Prefer answers that match follow-up context
+    q_words = set(re.findall(r"\w+", question.lower()))
+    scored = []
 
-Conversation so far:
-{history_text}
+    for d in docs:
+        a = d.page_content
+        a_words = set(re.findall(r"\w+", a.lower()))
+        score = len(q_words & a_words)
 
-Context:
-{context}
+        # boost if related to previous question
+        if history:
+            prev_words = set(
+                re.findall(r"\w+", history[-1]["q"].lower())
+            )
+            score += len(prev_words & a_words)
 
-Question:
-{question}
+        scored.append((score, a))
 
-Answer:
-"""
-    return get_llm().invoke(prompt).content.strip()
+    scored.sort(reverse=True)
+    return clean_answer(scored[0][1]) if scored else "No relevant answer found."
 
 # ===============================
 # UI – QUESTION
@@ -148,7 +139,7 @@ with st.form("ask_form", clear_on_submit=True):
     clear = col2.form_submit_button("Clear chat")
 
 # ===============================
-# CLEAR CHAT
+# CLEAR CHAT (PER TOOL)
 # ===============================
 if clear:
     st.session_state.chat[tool_mode] = []
@@ -163,12 +154,12 @@ if ask and q.strip():
         st.error("No Q&A files found.")
         st.stop()
 
-    docs = index.similarity_search(q, k=4)
+    docs = index.similarity_search(q, k=5)
 
     if answer_mode == "Ultra-Fast":
-        answer = docs[0].page_content.strip()
+        answer = clean_answer(docs[0].page_content)
     else:
-        answer = smart_answer(q, docs, st.session_state.chat[tool_mode])
+        answer = thinking_answer(q, docs, st.session_state.chat[tool_mode])
 
     st.session_state.chat[tool_mode].append({
         "q": q,
