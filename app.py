@@ -1,6 +1,7 @@
 import os
 import re
 import html
+import time
 import streamlit as st
 
 from langchain_community.vectorstores import FAISS
@@ -12,15 +13,17 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 # PAGE CONFIG
 # ===============================
 st.set_page_config(
-    page_title="Bayut & dubizzle Internal Assistant",
+    page_title="Bayut & Dubizzle Internal Assistant",
     layout="wide"
 )
 
-# ✅ UI: bold label + less space between buttons
+# ===============================
+# UI CSS
+# ===============================
 st.markdown(
     """
     <style>
-      div[data-testid="stHorizontalBlock"] { gap: 0.14rem; }
+      div[data-testid="stHorizontalBlock"] { gap: 0.14rem; }   /* less space between buttons */
       button { white-space: nowrap !important; }
       .ask-label { font-weight: 800; margin-bottom: 6px; }
     </style>
@@ -40,8 +43,13 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 st.session_state.setdefault("chat", {
     "General": [],
     "Bayut": [],
-    "dubizzle": []
+    "Dubizzle": []
 })
+
+# ===============================
+# CONSTANTS
+# ===============================
+THINKING_DELAY_SECONDS = 1.2  # increase if you want slower Thinking mode
 
 # ===============================
 # HELPERS
@@ -66,7 +74,7 @@ def is_download_sop_request(question: str) -> bool:
 def bubble_style(mode: str) -> str:
     if mode == "Bayut":
         return "background:#EAF7F1;border:1px solid #BFE6D5;"
-    if mode == "dubizzle":
+    if mode == "Dubizzle":
         return "background:#FCEBEC;border:1px solid #F3C1C5;"
     return "background:#F5F6F8;border:1px solid #E2E5EA;"
 
@@ -76,15 +84,12 @@ def clean_answer(text: str) -> str:
 
     text = re.sub(r"", "", text, flags=re.DOTALL)
     text = re.sub(r"", "", text, flags=re.DOTALL)
-
     text = re.sub(r"turn\d+file\d+", "", text, flags=re.IGNORECASE)
     text = re.sub(r"turn\d+file\d+", "", text, flags=re.IGNORECASE)
     text = re.sub(r"[^A-Za-z0-9]*filecite[^A-Za-z0-9]*", "", text, flags=re.IGNORECASE)
-
     text = re.sub(r"\bQ:\s*", "", text)
     text = re.sub(r"\bA:\s*", "", text)
     text = re.sub(r"\bQ\d+\)\s*", "", text, flags=re.IGNORECASE)
-
     text = text.replace("*", " ")
     text = re.sub(r"[\x00-\x1F\x7F]", " ", text)
 
@@ -176,7 +181,6 @@ def is_name_question(q: str) -> bool:
         "name?", "the name"
     ])
 
-# ✅ NEW: APP/TOOL OWNERSHIP INTENT
 def is_app_owner_question(q: str) -> bool:
     ql = q.lower()
     keys = [
@@ -207,12 +211,12 @@ def list_txt_files():
     return sorted([os.path.join(DATA_DIR, f) for f in os.listdir(DATA_DIR) if f.lower().endswith(".txt")])
 
 def mode_allows_file(mode: str, filename_lower: str) -> bool:
-    # ✅ Always allow “app/tool/assistant/faq” files in any mode
+    # Always allow app/tool/assistant/faq files in any mode
     if any(k in filename_lower for k in APP_ALLOW):
         return True
 
     is_bayut = filename_lower.startswith("bayut")
-    is_dubizzle = filename_lower.startswith("dubizzle")
+    is_dubizzle = filename_lower.startswith("dubizzle") or filename_lower.startswith("dubizzle")
     is_both = filename_lower.startswith("both")
     is_general = filename_lower.startswith("general")
 
@@ -220,7 +224,7 @@ def mode_allows_file(mode: str, filename_lower: str) -> bool:
         return True
     if mode == "Bayut":
         return is_bayut or is_both or is_general
-    if mode == "dubizzle":
+    if mode == "Dubizzle":
         return is_dubizzle or is_both or is_general
     return True
 
@@ -350,14 +354,14 @@ def answer_from_qa(question: str, qa_index, answer_mode: str, history,
     for d in results:
         src = (d.metadata or {}).get("source_file", "")
 
-        # ✅ APP scope: only allow app/assistant/faq files (block marketing completely)
+        # APP scope: only app/assistant files
         if app_scope:
             if is_marketing_file(src):
                 continue
             if not is_app_file(src):
                 continue
 
-        # ✅ Listings scope: only allow listings/corrections files (block marketing completely)
+        # Listings scope: only listings/corrections files
         if listings_scope:
             if is_marketing_file(src):
                 continue
@@ -391,8 +395,27 @@ def answer_from_sop_fallback(question: str, sop_index):
         return clean_answer(res[0].page_content)[:450]
     return None
 
+def enhance_for_thinking(answer: str) -> str:
+    """More detailed, but still natural. No bullets unless needed."""
+    a = clean_answer(answer)
+    if not a:
+        return a
+
+    # If already long, keep it as is
+    if len(a.split()) >= 60:
+        return a
+
+    # Expand short answers in a natural way
+    return (
+        f"{a}\n\n"
+        "If you want more detail, ask:\n"
+        "- “step-by-step”\n"
+        "- “give me the checklist”\n"
+        "- “who are the POCs?”"
+    )
+
 def smart_answer(question: str, qa_index, sop_index, answer_mode: str, history):
-    # ✅ Hard override: app ownership ALWAYS returns correct answer
+    # Hard override: app ownership ALWAYS correct
     if is_app_owner_question(question):
         return "Faten Aish and Sarah Al Nawah."
 
@@ -414,13 +437,12 @@ def smart_answer(question: str, qa_index, sop_index, answer_mode: str, history):
             return b
         return "I couldn’t find a clear answer to that."
 
-    # ✅ App/tool general questions (non-owner): search only app/faq files first
-    if "assistant" in question.lower() or "tool" in question.lower() or "app" in question.lower():
+    # App/tool general (not owner)
+    if any(w in question.lower() for w in ["assistant", "tool", "app"]):
         a = answer_from_qa(question, qa_index, answer_mode, history, force_app_filter=True)
         if a:
             return a
 
-    # normal QA
     a = answer_from_qa(question, qa_index, answer_mode, history)
     if a:
         return a
@@ -436,7 +458,7 @@ def smart_answer(question: str, qa_index, sop_index, answer_mode: str, history):
 # ===============================
 with st.sidebar:
     st.header("Select tool")
-    tool_mode = st.radio("", ["General", "Bayut", "dubizzle"], index=0)
+    tool_mode = st.radio("", ["General", "Bayut", "Dubizzle"], index=0)
     st.markdown("---")
     answer_mode = st.radio("Answer mode", ["Ultra-Fast", "Thinking"], index=0)
 
@@ -447,7 +469,7 @@ st.markdown(
     """
     <h1 style="text-align:center;font-weight:800;">
       <span style="color:#0E8A6D;">Bayut</span> &
-      <span style="color:#D71920;">dubizzle</span>
+      <span style="color:#D71920;">Dubizzle</span>
       AI Content Assistant
     </h1>
     <p style="text-align:center;color:#666;">Internal AI Assistant</p>
@@ -456,20 +478,27 @@ st.markdown(
 )
 
 # ===============================
-# TOOL HEADING
+# TOOL HEADING (Bayut green / Dubizzle red)
 # ===============================
 if tool_mode == "Bayut":
-    st.subheader("Ask Bayut Anything")
-elif tool_mode == "dubizzle":
-    st.subheader("Ask dubizzle Anything")
+    st.markdown(
+        '<h2 style="margin-top:6px;">Ask <span style="color:#0E8A6D;font-weight:800;">Bayut</span> Anything</h2>',
+        unsafe_allow_html=True
+    )
+elif tool_mode == "Dubizzle":
+    st.markdown(
+        '<h2 style="margin-top:6px;">Ask <span style="color:#D71920;font-weight:800;">Dubizzle</span> Anything</h2>',
+        unsafe_allow_html=True
+    )
 else:
-    st.subheader("General Assistant")
+    st.markdown('<h2 style="margin-top:6px;">General Assistant</h2>', unsafe_allow_html=True)
 
 # ===============================
 # QUESTION UI
 # ===============================
 with st.form("ask_form", clear_on_submit=True):
-    st.markdown('<div class="ask-label">Ask a question</div>', unsafe_allow_html=True)
+    # Ask me Anything! lower
+    st.markdown('<div class="ask-label" style="margin-top:14px;">Ask me Anything!</div>', unsafe_allow_html=True)
     q = st.text_input("", placeholder="Type your question here...")
 
     left, mid, right = st.columns([4, 2.3, 4])
@@ -502,6 +531,10 @@ if ask and q.strip():
 
     history = st.session_state.chat[tool_mode]
     answer = smart_answer(q, qa_index, sop_index, answer_mode, history)
+
+    if answer_mode == "Thinking":
+        time.sleep(THINKING_DELAY_SECONDS)
+        answer = enhance_for_thinking(answer)
 
     st.session_state.chat[tool_mode].append({"q": q, "a": answer})
     st.rerun()
