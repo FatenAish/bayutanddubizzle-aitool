@@ -1,18 +1,16 @@
 import os
 import re
-import shutil
 import streamlit as st
-
 from langchain_community.vectorstores import FAISS
 from langchain_community.document_loaders import TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 
 # ===============================
 # PAGE CONFIG
 # ===============================
 st.set_page_config(
-    page_title="Bayut & Dubizzle AI Content Assistant",
+    page_title="Bayut & dubizzle AI Assistant",
     layout="wide"
 )
 
@@ -21,34 +19,26 @@ st.set_page_config(
 # ===============================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
-TMP_DIR = "/tmp"
-
-TOOLS = ["General", "Bayut", "Dubizzle"]
+INDEX_DIR = "/tmp/qa_index"
 
 # ===============================
-# SESSION STATE (SAFE INIT)
+# SESSION STATE
 # ===============================
-if "chat" not in st.session_state:
-    st.session_state.chat = {t: [] for t in TOOLS}
-
-if "topic" not in st.session_state:
-    st.session_state.topic = {t: "" for t in TOOLS}
+st.session_state.setdefault("chat", {
+    "General": [],
+    "Bayut": [],
+    "dubizzle": []
+})
 
 # ===============================
-# SIDEBAR
+# SIDEBAR – TOOL SELECTION
 # ===============================
 with st.sidebar:
-    st.header("Tool")
-    tool_mode = st.radio("", TOOLS, index=0)
+    st.header("Select tool")
+    tool_mode = st.radio("", ["General", "Bayut", "dubizzle"], index=0)
 
-    st.session_state.chat.setdefault(tool_mode, [])
-    st.session_state.topic.setdefault(tool_mode, "")
-
-    st.markdown(" ")
-    if st.button("🔁 Rebuild Index"):
-        shutil.rmtree(TMP_DIR, ignore_errors=True)
-        st.cache_resource.clear()
-        st.success("Index rebuilt")
+    st.markdown("---")
+    answer_mode = st.radio("Answer mode", ["Ultra-Fast", "Thinking"], index=0)
 
 # ===============================
 # TITLE
@@ -57,209 +47,144 @@ st.markdown(
     """
     <h1 style="text-align:center;font-weight:800;">
       <span style="color:#0E8A6D;">Bayut</span> &
-      <span style="color:#D71920;">Dubizzle</span>
+      <span style="color:#D71920;">dubizzle</span>
       AI Content Assistant
     </h1>
-    <p style="text-align:center;color:#666;">Fast internal assistant</p>
+    <p style="text-align:center;color:#666;">Internal Q&A Assistant</p>
     """,
     unsafe_allow_html=True
 )
 
 # ===============================
-# EMBEDDINGS (LOCAL)
+# LOAD QA FILES ONLY
+# ===============================
+def get_qa_files(mode):
+    files = []
+    for f in os.listdir(DATA_DIR):
+        if not f.endswith("-QA.txt"):
+            continue
+
+        lf = f.lower()
+        if mode == "Bayut" and not lf.startswith("bayut"):
+            continue
+        if mode == "dubizzle" and not lf.startswith("dubizzle"):
+            continue
+
+        files.append(os.path.join(DATA_DIR, f))
+    return files
+
+# ===============================
+# BUILD / LOAD INDEX
 # ===============================
 @st.cache_resource
-def get_embeddings():
-    return HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-MiniLM-L6-v2"
+def load_index(mode):
+    files = get_qa_files(mode)
+    if not files:
+        return None
+
+    docs = []
+    for f in files:
+        docs.extend(TextLoader(f, encoding="utf-8").load())
+
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=700,
+        chunk_overlap=100
+    )
+    chunks = splitter.split_documents(docs)
+
+    embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+    index = FAISS.from_documents(chunks, embeddings)
+    return index
+
+# ===============================
+# LLM
+# ===============================
+@st.cache_resource
+def get_llm():
+    return ChatOpenAI(
+        model="gpt-4o-mini",
+        temperature=0
     )
 
 # ===============================
-# FILE ROUTING
+# SMART ANSWER (CHATGPT STYLE)
 # ===============================
-def file_allowed(fname: str, mode: str) -> bool:
-    f = fname.lower()
-    if mode == "General":
-        return True
-    if mode == "Bayut":
-        return f.startswith("bayut") or f.startswith("both")
-    if mode == "Dubizzle":
-        return f.startswith("dubizzle") or f.startswith("both")
-    return True
+def smart_answer(question, docs, history):
+    context = "\n\n".join(d.page_content for d in docs)[:2500]
+    history_text = "\n".join(
+        f"Q: {h['q']}\nA: {h['a']}"
+        for h in history[-3:]
+    )
 
-# ===============================
-# INDEX PER TOOL
-# ===============================
-@st.cache_resource
-def load_index(mode: str):
-    path = os.path.join(TMP_DIR, f"faiss_{mode.lower()}")
-    emb = get_embeddings()
+    prompt = f"""
+You are an internal assistant.
+Answer clearly and concisely.
+Do NOT list SOP sections.
+Do NOT repeat the SOP text.
+Answer like a knowledgeable colleague.
 
-    if os.path.exists(path):
-        return FAISS.load_local(path, emb, allow_dangerous_deserialization=True)
+Conversation so far:
+{history_text}
 
-    docs = []
-    for f in os.listdir(DATA_DIR):
-        if f.endswith(".txt") and file_allowed(f, mode):
-            docs.extend(
-                TextLoader(os.path.join(DATA_DIR, f), encoding="utf-8").load()
-            )
+Context:
+{context}
 
-    splitter = RecursiveCharacterTextSplitter(chunk_size=900, chunk_overlap=120)
-    chunks = splitter.split_documents(docs)
+Question:
+{question}
 
-    index = FAISS.from_documents(chunks, emb)
-    index.save_local(path)
-    return index
-
-index = load_index(tool_mode)
+Answer:
+"""
+    return get_llm().invoke(prompt).content.strip()
 
 # ===============================
-# INTENT DETECTION (THE FIX)
+# UI – QUESTION
 # ===============================
-def get_intent(q: str) -> str:
-    q = q.lower().strip()
+st.subheader(f"{tool_mode} Assistant")
 
-    if q.startswith(("what is", "what are", "define")):
-        return "definition"
-    if q.startswith("who ") or "responsible" in q:
-        return "role"
-    if q.startswith("how ") or "steps" in q or "process" in q:
-        return "process"
-    if any(name in q for name in ["faten", "aish", "poc"]):
-        return "person"
-
-    return "general"
+with st.form("ask_form", clear_on_submit=True):
+    q = st.text_input("Ask a question")
+    col1, col2 = st.columns([1, 1])
+    ask = col1.form_submit_button("Ask")
+    clear = col2.form_submit_button("Clear chat")
 
 # ===============================
-# QUERY CLEANING
+# CLEAR CHAT
 # ===============================
-def clean_query(q: str) -> str:
-    q = re.sub(r"\blunch\b", "launch", q, flags=re.I)
-    q = re.sub(r"\bcampains\b", "campaigns", q, flags=re.I)
-    return q.strip()
-
-# ===============================
-# ANSWER STRATEGIES
-# ===============================
-def definition_answer(q, docs):
-    text = " ".join(d.page_content for d in docs)
-    for s in re.split(r"(?<=[.!?])\s+", text):
-        if " is " in s.lower() or " are " in s.lower():
-            return s.strip()
-    return "I couldn’t find a clear definition."
-
-def role_answer(q, docs):
-    text = " ".join(d.page_content for d in docs).lower()
-    lines = []
-    for s in text.split("."):
-        if any(k in s for k in ["sub-editor", "content team", "responsible", "writer", "editor", "qa"]):
-            lines.append(s.strip())
-    if lines:
-        return " ".join(lines[:2]).capitalize()
-    return "This responsibility is handled by the content and sub-editing teams."
-
-def person_answer(q, docs):
-    text = " ".join(d.page_content for d in docs).lower()
-    role = ""
-    duties = []
-
-    for s in text.split("."):
-        if "faten" in s and "content" in s:
-            role = s.strip()
-        if any(k in s for k in ["review", "correction", "verification", "arabic"]):
-            duties.append(s.strip())
-
-    if role:
-        return f"{role.capitalize()}. She is responsible for " + ", ".join(duties[:2]) + "."
-
-    return "I couldn’t find a clear role description for this person."
-
-def process_answer(q, docs):
-    text = " ".join(d.page_content for d in docs)
-
-    steps = []
-    for s in re.split(r"\n|\.", text):
-        if any(k in s.lower() for k in [
-            "submit",
-            "request",
-            "review",
-            "verify",
-            "update",
-            "operations",
-            "qa",
-            "channel"
-        ]):
-            steps.append(s.strip())
-
-    if not steps:
-        return "The SOP does not clearly outline a step-by-step process for this task."
-
-    steps = steps[:6]
-
-    answer = "To complete this process:\n"
-    for i, step in enumerate(steps, 1):
-        answer += f"{i}) {step}\n"
-
-    return answer.strip()
-
-# ===============================
-# UI — INPUT + BUTTONS
-# ===============================
-st.subheader("Ask your internal question")
-
-q = st.text_input("Question", label_visibility="collapsed")
-
-btn1, btn2 = st.columns(2)
-with btn1:
-    ask = st.button("Ask", use_container_width=True)
-with btn2:
-    clear = st.button("Clear chat", use_container_width=True)
-
 if clear:
     st.session_state.chat[tool_mode] = []
-    st.session_state.topic[tool_mode] = ""
     st.rerun()
 
-if ask:
-    q_clean = clean_query(q)
-    intent = get_intent(q_clean)
+# ===============================
+# HANDLE QUESTION
+# ===============================
+if ask and q.strip():
+    index = load_index(tool_mode)
+    if index is None:
+        st.error("No Q&A files found.")
+        st.stop()
 
-    topic = st.session_state.topic[tool_mode]
-    search_q = f"{topic}. {q_clean}" if topic else q_clean
+    docs = index.similarity_search(q, k=4)
 
-    docs = index.similarity_search(search_q, k=6)
-
-    if intent == "process":
-        ans = process_answer(q_clean, docs)
-
-    elif intent == "person":
-        ans = person_answer(q_clean, docs)
-
-    elif intent == "role":
-        ans = role_answer(q_clean, docs)
-
-    elif intent == "definition":
-        ans = definition_answer(q_clean, docs)
-        st.session_state.topic[tool_mode] = q_clean
-
+    if answer_mode == "Ultra-Fast":
+        answer = docs[0].page_content.strip()
     else:
-        ans = definition_answer(q_clean, docs)
+        answer = smart_answer(q, docs, st.session_state.chat[tool_mode])
 
     st.session_state.chat[tool_mode].append({
-        "q": q_clean,
-        "a": ans
+        "q": q,
+        "a": answer
     })
+    st.rerun()
 
 # ===============================
-# CHAT HISTORY
+# CHAT HISTORY (PER TOOL)
 # ===============================
-for item in st.session_state.chat.get(tool_mode, []):
+for item in st.session_state.chat[tool_mode]:
     st.markdown(
         f"""
-        <div style="border:1px solid #ddd;padding:12px;border-radius:8px;margin-bottom:8px;">
-          <b>{item['q']}</b><br>
-          {item['a']}
+        <div style="border:1px solid #ddd;padding:12px;border-radius:8px;margin-bottom:10px;">
+        <b>Q:</b> {item['q']}<br><br>
+        <b>A:</b> {item['a']}
         </div>
         """,
         unsafe_allow_html=True
