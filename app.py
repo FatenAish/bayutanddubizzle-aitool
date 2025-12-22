@@ -1,5 +1,6 @@
 import os
 import re
+import unicodedata
 import streamlit as st
 
 from langchain_community.vectorstores import FAISS
@@ -20,6 +21,8 @@ st.set_page_config(
 # ===============================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
+
+AKA_TOOL_NAMES = {"General": "General", "Bayut": "Bayut", "Dubizzle": "Dubizzle"}
 
 # ===============================
 # SESSION STATE
@@ -112,33 +115,47 @@ def load_index(mode: str):
     return FAISS.from_documents(chunks, embeddings)
 
 # ===============================
-# CLEAN ANSWER (REMOVE FILECITE - VERY ROBUST)
+# CLEAN + NORMALIZE ANSWER (FIXES filecite + weird spacing)
 # ===============================
 def clean_answer(text: str) -> str:
     if not text:
         return ""
 
-    # Remove private-use glyphs + replacement chars (often render as boxes)
+    # Normalize unicode (fixes lots of invisible junk / spacing issues)
+    text = unicodedata.normalize("NFKC", text)
+
+    # Remove zero-width and directional characters that cause spaced letters
+    text = re.sub(r"[\u200B-\u200F\u202A-\u202E\u2060-\u206F]", "", text)
+
+    # Remove private-use + replacement chars (render as boxes)
     text = re.sub(r"[\uE000-\uF8FF\uFFFD]", "", text)
 
-    # Remove exact marker if present
+    # Remove exact marker format if present
     text = re.sub(r"", " ", text)
 
-    # Remove any remaining special glyphs used by citations
-    text = text.replace("", " ")
-
-    # Remove ANY occurrence of filecite even if wrapped with weird chars
+    # Remove any token containing filecite (handles weird glued strings like ...filecite��turn3file0)
     text = re.sub(r"(?i)\S*filecite\S*", " ", text)
 
-    # Remove turnXfileY fragments (extra safety)
+    # Remove any token containing turnXfileY
     text = re.sub(r"(?i)\S*turn\d+file\d+\S*", " ", text)
 
-    # Also remove the word itself if it survived
-    text = re.sub(r"(?i)filecite", " ", text)
+    # Sometimes citations appear as bare "filecite turn3file0"
+    text = re.sub(r"(?i)\bfilecite\b", " ", text)
+    text = re.sub(r"(?i)\bturn\d+file\d+\b", " ", text)
 
-    # Normalize spaces
-    text = re.sub(r"\s+", " ", text).strip()
-    return text
+    # Fix "O p e n W o r d P r e s s" style spacing if it happens:
+    # collapse spaces between single letters when there are many in a row
+    text = re.sub(r"(?:(?<=\b)[A-Za-z]\s+){3,}[A-Za-z]\b",
+                  lambda m: m.group(0).replace(" ", ""),
+                  text)
+
+    # Add line breaks for numbered steps (1. 2. 3.)
+    text = re.sub(r"(?<!\n)(\d+)\.\s*", r"\n\1. ", text)
+
+    # Clean extra spaces/newlines
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
 
 # ===============================
 # STRICT ANSWER EXTRACTION
@@ -240,8 +257,7 @@ def pick_sop_files(mode: str, question: str):
 # ===============================
 with st.form("ask_form", clear_on_submit=True):
     q = st.text_input("Ask a question")
-
-    b1, b2, _sp = st.columns([1, 1, 8], gap="small")
+    b1, b2, _sp = st.columns([1, 1, 10], gap="small")
     ask = b1.form_submit_button("Ask")
     clear = b2.form_submit_button("Clear chat")
 
