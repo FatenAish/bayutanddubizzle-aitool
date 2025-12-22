@@ -24,37 +24,35 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 TMP_DIR = "/tmp"
 
+TOOLS = ["General", "Bayut", "Dubizzle"]
+
 # ===============================
-# SESSION STATE (PER TOOL MEMORY)
+# SESSION STATE (SAFE INIT)
 # ===============================
-st.session_state.setdefault("chat", {
-    "General": [],
-    "Bayut": [],
-    "Dubizzle": []
-})
-st.session_state.setdefault("topic", {
-    "General": "",
-    "Bayut": "",
-    "Dubizzle": ""
-})
+if "chat" not in st.session_state:
+    st.session_state.chat = {t: [] for t in TOOLS}
+
+if "topic" not in st.session_state:
+    st.session_state.topic = {t: "" for t in TOOLS}
 
 # ===============================
 # SIDEBAR
 # ===============================
 with st.sidebar:
     st.header("Tool")
-    tool_mode = st.radio("", ["General", "Bayut", "Dubizzle"], index=0)
+    tool_mode = st.radio("", TOOLS, index=0)
+
+    # 🔒 ENSURE TOOL KEYS ALWAYS EXIST (CRASH FIX)
+    if tool_mode not in st.session_state.chat:
+        st.session_state.chat[tool_mode] = []
+    if tool_mode not in st.session_state.topic:
+        st.session_state.topic[tool_mode] = ""
 
     st.markdown(" ")
     st.header("Answer mode")
     answer_mode = st.radio("", ["Ultra-Fast", "Thinking"], index=0)
 
     st.markdown(" ")
-    if st.button("🧹 Clear Chat"):
-        st.session_state.chat[tool_mode] = []
-        st.session_state.topic[tool_mode] = ""
-        st.rerun()
-
     if st.button("🔁 Rebuild Index"):
         shutil.rmtree(TMP_DIR, ignore_errors=True)
         st.cache_resource.clear()
@@ -85,7 +83,7 @@ def get_embeddings():
     )
 
 # ===============================
-# LLM (THINKING MODE)
+# LLM (USED FOR SMART ANSWERS)
 # ===============================
 @st.cache_resource
 def get_llm():
@@ -139,7 +137,7 @@ def load_index(mode: str):
 index = load_index(tool_mode)
 
 # ===============================
-# SMART CLEANING
+# QUERY CLEANING
 # ===============================
 def clean_query(q: str) -> str:
     q = re.sub(r"\blunch\b", "launch", q, flags=re.IGNORECASE)
@@ -148,53 +146,57 @@ def clean_query(q: str) -> str:
     return q.strip()
 
 # ===============================
-# SMART ANSWER LAYER (THE FIX)
+# SMART ANSWER (NOT SOP DUMP)
 # ===============================
-def smart_definition_answer(question, docs):
-    """
-    Produces a short, logical, human answer.
-    """
+def smart_answer(question, docs):
     if not docs:
-        return "I couldn’t find a clear definition in the available documentation."
+        return "I couldn’t find a clear answer in the available documentation."
 
-    text = " ".join(d.page_content for d in docs)[:1200]
+    context = " ".join(d.page_content for d in docs)[:1200]
 
     prompt = f"""
 Explain this clearly in 2–3 sentences.
 Do NOT copy SOP text.
-Explain like answering a colleague.
+Answer like a colleague.
 
-Topic:
+Question:
 {question}
 
-Reference:
-{text}
+Context:
+{context}
 
 Answer:
 """
     return get_llm().invoke(prompt).content.strip()
 
 # ===============================
-# UI
+# UI — ASK + CLEAR (SIDE BY SIDE)
 # ===============================
 st.subheader("Ask your internal question")
-q = st.text_input("Question")
 
-if st.button("Ask"):
+col1, col2 = st.columns([5, 1])
+with col1:
+    q = st.text_input("Question", label_visibility="collapsed")
+with col2:
+    clear_clicked = st.button("🧹 Clear Chat")
+
+if clear_clicked:
+    st.session_state.chat[tool_mode] = []
+    st.session_state.topic[tool_mode] = ""
+    st.rerun()
+
+ask_clicked = st.button("Ask")
+
+if ask_clicked:
     q_clean = clean_query(q)
 
-    # Resolve context per tool
+    # Topic-aware follow-up
     topic = st.session_state.topic[tool_mode]
-    resolved_query = f"{topic}. {q_clean}" if topic else q_clean
+    search_q = f"{topic}. {q_clean}" if topic else q_clean
 
-    docs = index.similarity_search(resolved_query, k=4)
+    docs = index.similarity_search(search_q, k=4)
+    ans = smart_answer(q_clean, docs)
 
-    if answer_mode == "Ultra-Fast":
-        ans = smart_definition_answer(q_clean, docs)
-    else:
-        ans = smart_definition_answer(q_clean, docs)
-
-    # Update memory per tool
     st.session_state.topic[tool_mode] = q_clean
     st.session_state.chat[tool_mode].append({
         "q": q_clean,
@@ -202,9 +204,9 @@ if st.button("Ask"):
     })
 
 # ===============================
-# CHAT HISTORY (PER TOOL)
+# CHAT HISTORY (SAFE)
 # ===============================
-for item in st.session_state.chat[tool_mode]:
+for item in st.session_state.chat.get(tool_mode, []):
     st.markdown(
         f"""
         <div style="border:1px solid #ddd;padding:12px;border-radius:8px;margin-bottom:8px;">
