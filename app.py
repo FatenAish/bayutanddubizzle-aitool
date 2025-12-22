@@ -1,12 +1,17 @@
 import os
 import re
+import time
+import random
 import shutil
 import streamlit as st
+
+import openai  # for catching RateLimitError
 
 from langchain_community.vectorstores import FAISS
 from langchain_community.document_loaders import TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
+
 
 # ===============================
 # PAGE CONFIG
@@ -17,11 +22,12 @@ st.set_page_config(
 )
 
 # ===============================
-# PATHS (works on Cloud Run / local)
+# PATHS
 # ===============================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "data")  # your repo /app/data
-TMP_DIR = "/tmp"  # Cloud Run writable
+DATA_DIR = os.path.join(BASE_DIR, "data")      # repo folder: /app/data
+TMP_DIR = "/tmp"                               # writable on Cloud Run/Streamlit Cloud
+
 
 # ===============================
 # SESSION STATE
@@ -30,12 +36,12 @@ st.session_state.setdefault("last_q", "")
 st.session_state.setdefault("last_a", "")
 st.session_state.setdefault("last_tool", "General")
 
+
 # ===============================
-# SIDEBAR (VISUAL + MODE)
+# SIDEBAR
 # ===============================
 with st.sidebar:
     st.header("Select an option")
-
     tool_mode = st.radio("", ["General", "Bayut", "Dubizzle"], index=0)
     st.session_state.last_tool = tool_mode
 
@@ -55,7 +61,8 @@ with st.sidebar:
             if os.path.exists(ip):
                 shutil.rmtree(ip, ignore_errors=True)
 
-        st.success("Rebuilding will happen automatically on next question.")
+        st.success("Index cache cleared. It will rebuild automatically on next question.")
+
 
 # ===============================
 # TITLE
@@ -72,43 +79,29 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# ===============================
-# EMBEDDINGS — OPENAI ONLY
-# ===============================
-@st.cache_resource
-def get_embeddings():
-    return OpenAIEmbeddings(model="text-embedding-3-small")
 
 # ===============================
-# FILE ROUTING RULES (NO FOLDER CHANGES NEEDED)
+# SMART ROUTING BY FILENAME
 # ===============================
 def classify_file(fname: str) -> str:
-    """
-    Returns: "bayut" | "dubizzle" | "both" | "general"
-    Based on filename patterns. Your current filenames already match this.
-    """
     f = fname.lower().strip()
 
-    # both
-    if f.startswith("both ") or f.startswith("both-") or " both " in f or f.startswith("both_") or f.startswith("both"):
+    # BOTH
+    if f.startswith("both") or " both " in f:
         return "both"
 
-    # bayut
-    if f.startswith("bayut") or f.startswith("bayut-") or "bayut" in f:
+    # BAYUT
+    if f.startswith("bayut") or "bayut" in f:
         return "bayut"
 
-    # dubizzle
-    if f.startswith("dubizzle") or f.startswith("dubizzle-") or "dubizzle" in f:
+    # DUBIZZLE
+    if f.startswith("dubizzle") or "dubizzle" in f:
         return "dubizzle"
 
     return "general"
 
+
 def allowed_in_mode(file_class: str, mode: str) -> bool:
-    """
-    General: everything
-    Bayut: bayut + both
-    Dubizzle: dubizzle + both
-    """
     if mode == "General":
         return True
     if mode == "Bayut":
@@ -117,33 +110,147 @@ def allowed_in_mode(file_class: str, mode: str) -> bool:
         return file_class in {"dubizzle", "both"}
     return True
 
+
 # ===============================
-# INDEX BUILD/LOAD (PER MODE)
+# RATE-LIMIT SAFE EMBEDDINGS
+# ===============================
+class SafeOpenAIEmbeddings(OpenAIEmbeddings):
+    """
+    Wrap OpenAI embeddings to:
+    - embed in small batches
+    - retry on RateLimitError with exponential backoff
+    """
+    def _sleep(self, attempt: int):
+        # exponential backoff + jitter
+        wait = min(60, (2 ** attempt)) + random.uniform(0.2, 1.2)
+        time.sleep(wait)
+
+    def embed_documents(self, texts):
+        # small batches to reduce bursts
+        batch_size = 24
+        out = []
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i:i + batch_size]
+            for attempt in range(8):
+                try:
+                    out.extend(super().embed_documents(batch))
+                    break
+                except openai.RateLimitError:
+                    self._sleep(attempt)
+                except Exception:
+                    # short pause for transient errors
+                    time.sleep(1.0)
+                    if attempt == 7:
+                        raise
+        return out
+
+    def embed_query(self, text):
+        for attempt in range(8):
+            try:
+                return super().embed_query(text)
+            except openai.RateLimitError:
+                self._sleep(attempt)
+            except Exception:
+                time.sleep(1.0)
+                if attempt == 7:
+                    raise
+
+
+@st.cache_resource
+def get_embeddings():
+    # max_retries here is still useful, but our wrapper is the real fix
+    return SafeOpenAIEmbeddings(
+        model="text-embedding-3-small",
+        max_retries=2,
+        request_timeout=60
+    )
+
+
+# ===============================
+# LLM
 # ===============================
 @st.cache_resource
-def load_or_build_index(mode: str):
-    """
-    Builds a separate FAISS index per mode (general/bayut/dubizzle),
-    but WITHOUT changing your folder structure.
-    """
-    embeddings = get_embeddings()
+def get_llm():
+    return ChatOpenAI(model="gpt-4o-mini", temperature=0, request_timeout=60, max_retries=2)
 
+
+# ===============================
+# SMART QUERY EXPANSION
+# ===============================
+def expand_query(q: str) -> str:
+    x = q.strip()
+
+    # Fix common typos
+    x = re.sub(r"\blunch\b", "launch", x, flags=re.IGNORECASE)
+    x = re.sub(r"\bcampains\b", "campaigns", x, flags=re.IGNORECASE)
+
+    # Expand abbreviations / intent words
+    # PM in your org context = Paid Marketing
+    x2 = x
+    x2 = re.sub(r"\bpm\b", "paid marketing", x2, flags=re.IGNORECASE)
+
+    # Add extra keywords to help matching SOP phrasing
+    boosters = [
+        "schedule", "timeline", "when", "launch date", "process", "SOP"
+    ]
+
+    # If the question seems about campaigns/launching, boost those terms
+    if re.search(r"\bcampaign|launch|paid marketing\b", x2, flags=re.IGNORECASE):
+        boosters += ["campaign launch", "go live", "start date"]
+
+    return f"{x2}\n\nKeywords: {', '.join(boosters)}"
+
+
+# ===============================
+# SMALLTALK + APP DESCRIPTION (NO SEARCH)
+# ===============================
+def is_greeting(q: str) -> bool:
+    x = q.strip().lower()
+    return (
+        x in {"hi", "hello", "hey", "السلام عليكم", "سلام", "مرحبا", "أهلا", "اهلا"} or
+        x.startswith(("hi ", "hello ", "hey ", "مرحبا "))
+    )
+
+def is_app_question(q: str) -> bool:
+    x = q.strip().lower()
+    triggers = [
+        "what is this app", "what is this tool", "what does this app do",
+        "what can you do", "who are you", "how to use", "help"
+    ]
+    return any(t in x for t in triggers)
+
+def app_description(mode: str) -> str:
+    scope = {
+        "General": "Bayut + Dubizzle + shared SOPs",
+        "Bayut": "Bayut SOPs + shared (Both) SOPs",
+        "Dubizzle": "Dubizzle SOPs + shared (Both) SOPs",
+    }.get(mode, "Bayut + Dubizzle")
+
+    return (
+        "This is an internal AI content assistant for Bayut & Dubizzle.\n\n"
+        f"- It searches your uploaded SOP .txt files and answers based on them.\n"
+        f"- Current mode: **{mode}** → scope: **{scope}**.\n\n"
+        "Try questions like:\n"
+        "- “When do paid marketing campaigns launch?”\n"
+        "- “What’s the process for newsletters?”\n"
+        "- “How do we handle listing corrections and updates?”"
+    )
+
+
+# ===============================
+# INDEX LOAD/BUILD (PER MODE) — NOT CACHED
+# ===============================
+def load_or_build_index(mode: str):
+    embeddings = get_embeddings()
     mode_key = mode.lower()
     index_path = os.path.join(TMP_DIR, f"faiss_{mode_key}")
 
-    # load if exists
     if os.path.exists(index_path):
-        return FAISS.load_local(
-            index_path,
-            embeddings,
-            allow_dangerous_deserialization=True
-        )
+        return FAISS.load_local(index_path, embeddings, allow_dangerous_deserialization=True)
 
-    # validate data dir
     if not os.path.exists(DATA_DIR):
         return None
 
-    # load only relevant docs
     docs = []
     for f in os.listdir(DATA_DIR):
         if not f.lower().endswith(".txt"):
@@ -153,58 +260,55 @@ def load_or_build_index(mode: str):
         if not allowed_in_mode(fclass, mode):
             continue
 
-        file_path = os.path.join(DATA_DIR, f)
+        fp = os.path.join(DATA_DIR, f)
         try:
-            docs.extend(TextLoader(file_path, encoding="utf-8").load())
+            docs.extend(TextLoader(fp, encoding="utf-8").load())
         except Exception:
-            # fallback if any weird encoding
-            docs.extend(TextLoader(file_path, encoding="utf-8", autodetect_encoding=True).load())
+            docs.extend(TextLoader(fp, encoding="utf-8", autodetect_encoding=True).load())
 
     if not docs:
         return None
 
-    splitter = RecursiveCharacterTextSplitter(chunk_size=700, chunk_overlap=100)
+    # Fewer chunks => fewer embedding calls => fewer rate limit hits
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=1200,   # bigger chunks than before
+        chunk_overlap=150
+    )
     chunks = splitter.split_documents(docs)
 
-    index = FAISS.from_documents(chunks, embeddings)
-    index.save_local(index_path)
-    return index
+    # Build with a progress UI so the user doesn't just see a crash
+    prog = st.progress(0, text="Building index (first time only)...")
+    try:
+        # FAISS.from_documents will call our SafeOpenAIEmbeddings which retries safely
+        index = FAISS.from_documents(chunks, embeddings)
+        index.save_local(index_path)
+        prog.progress(100, text="Index built ✅")
+        return index
+    except openai.RateLimitError:
+        # Clean partial index to avoid corrupt cache
+        if os.path.exists(index_path):
+            shutil.rmtree(index_path, ignore_errors=True)
+        prog.empty()
+        st.error(
+            "OpenAI rate limit hit while building the index.\n\n"
+            "Try again in a minute, or press **Rebuild Index** once and retry."
+        )
+        return None
+    finally:
+        try:
+            time.sleep(0.2)
+            prog.empty()
+        except Exception:
+            pass
 
-# ===============================
-# SMALLTALK + APP DESCRIPTION (NO SEARCH)
-# ===============================
-def is_greeting(q: str) -> bool:
-    x = q.strip().lower()
-    return x in {"hi", "hello", "hey", "hiya", "السلام عليكم", "سلام", "مرحبا", "أهلا", "اهلا"} or x.startswith(("hi ", "hello ", "hey "))
-
-def is_app_question(q: str) -> bool:
-    x = q.strip().lower()
-    patterns = [
-        "what is this app", "what is this tool", "what is this", "what does this app do",
-        "what can you do", "who are you", "help", "how to use"
-    ]
-    return any(p in x for p in patterns)
-
-def app_description(mode: str) -> str:
-    scope = {
-        "General": "Bayut + Dubizzle (and shared SOPs)",
-        "Bayut": "Bayut SOPs only (plus shared SOPs marked as Both)",
-        "Dubizzle": "Dubizzle SOPs only (plus shared SOPs marked as Both)"
-    }.get(mode, "Bayut + Dubizzle")
-
-    return (
-        f"This is an internal AI assistant for Bayut & Dubizzle.\n\n"
-        f"- It searches your uploaded .txt SOPs and internal notes, then answers quickly.\n"
-        f"- Current mode: **{mode}** → answering from **{scope}**.\n\n"
-        f"Ask me anything like: “What is the process for X?” or “Where do we update Y?”"
-    )
 
 # ===============================
 # ANSWERING
 # ===============================
 def extractive_answer(q, docs):
-    text = docs[0].page_content
-    sentences = re.split(r"(?<=[.!?])\s+", text)
+    # Use top docs, not just 1
+    combined = "\n".join(d.page_content for d in docs)
+    sentences = re.split(r"(?<=[.!?])\s+", combined)
     q_words = set(re.findall(r"\w+", q.lower()))
 
     ranked = sorted(
@@ -212,39 +316,35 @@ def extractive_answer(q, docs):
         key=lambda s: len(q_words & set(re.findall(r"\w+", s.lower()))),
         reverse=True
     )
-    return " ".join(ranked[:3]).strip()
+    return " ".join(ranked[:4]).strip()
 
-@st.cache_resource
-def get_llm():
-    return ChatOpenAI(model="gpt-4o-mini", temperature=0)
 
 def thinking_answer(q, docs, mode):
-    ctx = "\n\n".join(d.page_content for d in docs)[:2500]
+    ctx = "\n\n".join(d.page_content for d in docs)[:2800]
 
-    system = (
-        "You are an internal content operations assistant.\n"
-        "Answer using ONLY the provided context.\n"
-        "If the context does not contain the answer, say you don't have enough info in the uploaded SOPs.\n"
-        "Be clear and practical."
-    )
-
-    prefix = ""
+    prefix = "General: "
     if mode == "Bayut":
         prefix = "Bayut: "
     elif mode == "Dubizzle":
         prefix = "Dubizzle: "
-    else:
-        prefix = "General: "
 
-    msg = (
-        f"{system}\n\n"
+    prompt = (
+        "You are an internal SOP assistant.\n"
+        "Answer using ONLY the provided context.\n"
+        "If the context doesn't contain the answer, say you don't have enough info in the uploaded SOPs.\n"
+        "Be practical and direct.\n\n"
         f"Mode: {mode}\n\n"
         f"Context:\n{ctx}\n\n"
         f"Question:\n{q}\n\n"
         f"Return the final answer. Start with '{prefix}'."
     )
 
-    return get_llm().invoke(msg).content.strip()
+    try:
+        return get_llm().invoke(prompt).content.strip()
+    except openai.RateLimitError:
+        # fallback instead of crashing
+        return (prefix + extractive_answer(q, docs))
+
 
 # ===============================
 # UI
@@ -268,38 +368,34 @@ if ask:
         st.warning("Enter a question.")
         st.stop()
 
-    # 1) Smalltalk / app description (NO SEARCH)
+    # Smalltalk (no search)
     if is_greeting(q_clean):
         st.session_state.last_q = q_clean
         st.session_state.last_a = "Hello 👋 How can I help you?"
         st.rerun()
 
+    # App description (no search)
     if is_app_question(q_clean):
         st.session_state.last_q = q_clean
         st.session_state.last_a = app_description(tool_mode)
         st.rerun()
 
-    # 2) Retrieval-based answering (SEARCH)
+    # Smart retrieval query
+    search_q = expand_query(q_clean)
+
     index = load_or_build_index(tool_mode)
     if index is None:
-        st.error(
-            f"No index available for **{tool_mode}**.\n\n"
-            f"Make sure you have .txt files inside: `{DATA_DIR}`"
-        )
         st.stop()
 
-    docs = index.similarity_search(q_clean, k=2)
+    # More docs to handle “not direct like filenames”
+    docs = index.similarity_search(search_q, k=4)
 
     if not docs:
         st.session_state.last_q = q_clean
         st.session_state.last_a = "I couldn’t find anything relevant in the uploaded SOPs for this mode."
         st.rerun()
 
-    ans = (
-        extractive_answer(q_clean, docs)
-        if answer_mode == "Ultra-Fast"
-        else thinking_answer(q_clean, docs, tool_mode)
-    )
+    ans = extractive_answer(q_clean, docs) if answer_mode == "Ultra-Fast" else thinking_answer(q_clean, docs, tool_mode)
 
     st.session_state.last_q = q_clean
     st.session_state.last_a = ans
