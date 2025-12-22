@@ -13,61 +13,29 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 # SESSION STATE
 # ===============================
 if "chat" not in st.session_state:
-    st.session_state.chat = {
-        "Bayut": [],
-        "dubizzle": [],
-        "General": []
-    }
+    st.session_state.chat = []
 
 # ===============================
-# STYLE (ChatGPT bubbles)
+# HELPERS
 # ===============================
-st.markdown("""
-<style>
-.chat-container { display: flex; flex-direction: column; gap: 12px; }
-.user-bubble {
-    align-self: flex-end;
-    background: #DCF8C6;
-    padding: 12px 16px;
-    border-radius: 18px 18px 4px 18px;
-    max-width: 70%;
-}
-.bot-bubble {
-    align-self: flex-start;
-    background: #F1F0F0;
-    padding: 12px 16px;
-    border-radius: 18px 18px 18px 4px;
-    max-width: 70%;
-}
-</style>
-""", unsafe_allow_html=True)
-
-# ===============================
-# TOOL DETECTION
-# ===============================
-def detect_tool(q: str) -> str:
+def is_download_request(q: str) -> bool:
     q = q.lower()
-    if "dubizzle" in q:
-        return "dubizzle"
-    if "bayut" in q:
-        return "Bayut"
-    return "General"
+    triggers = ["download", "sop", "file", "send", "give me"]
+    return any(t in q for t in triggers)
 
-# ===============================
-# LOAD QA FILES
-# ===============================
-def load_qa_files(tool: str):
-    qa_pairs = []
+def find_matching_sop(q: str):
+    q = q.lower()
+    for f in os.listdir(DATA_DIR):
+        if f.lower().endswith(".txt") and "qa" not in f.lower():
+            if any(word in f.lower() for word in q.split()):
+                return f
+    return None
+
+def load_qa_pairs():
+    pairs = []
     for f in os.listdir(DATA_DIR):
         if not f.lower().endswith("-qa.txt"):
             continue
-
-        name = f.lower()
-        if tool == "Bayut" and "bayut" not in name:
-            continue
-        if tool == "dubizzle" and "dubizzle" not in name:
-            continue
-
         with open(os.path.join(DATA_DIR, f), encoding="utf-8") as file:
             lines = file.read().splitlines()
 
@@ -75,7 +43,7 @@ def load_qa_files(tool: str):
         for line in lines:
             if line.startswith("Q:"):
                 if q and a:
-                    qa_pairs.append((q, " ".join(a)))
+                    pairs.append((q, " ".join(a)))
                 q = line.replace("Q:", "").strip()
                 a = []
             elif line.startswith("A:"):
@@ -84,52 +52,32 @@ def load_qa_files(tool: str):
                 a.append(line.strip())
 
         if q and a:
-            qa_pairs.append((q, " ".join(a)))
+            pairs.append((q, " ".join(a)))
 
-    return qa_pairs
+    return pairs
 
-# ===============================
-# SMART ANSWER (QA ONLY)
-# ===============================
-def answer_question(question, tool):
-    qa_pairs = load_qa_files(tool)
+def answer_from_qa(question: str):
     question_l = question.lower()
+    qa = load_qa_pairs()
 
-    # Exact / strong match first
-    for q, a in qa_pairs:
+    for q, a in qa:
         if question_l in q.lower():
             return a
 
-    # Keyword overlap fallback
-    q_words = set(question_l.split())
+    words = set(question_l.split())
     scored = []
-    for q, a in qa_pairs:
-        score = len(q_words & set(q.lower().split()))
+    for q, a in qa:
+        score = len(words & set(q.lower().split()))
         if score > 0:
             scored.append((score, a))
 
     if scored:
         return sorted(scored, reverse=True)[0][1]
 
-    return "I don’t have a clear answer for this in the available Q&A files."
+    return "I don’t have a clear answer for this in the available Q&A."
 
 # ===============================
-# SIDEBAR — DOWNLOAD SOPs
-# ===============================
-with st.sidebar:
-    st.markdown("### 📥 Download SOPs")
-    for f in sorted(os.listdir(DATA_DIR)):
-        if f.lower().endswith(".txt") and "qa" not in f.lower():
-            with open(os.path.join(DATA_DIR, f), "rb") as file:
-                st.download_button(
-                    label=f,
-                    data=file,
-                    file_name=f,
-                    mime="text/plain"
-                )
-
-# ===============================
-# TITLE
+# TITLE (UNCHANGED)
 # ===============================
 st.markdown("""
 <h1 style="text-align:center;font-weight:800;">Internal AI Assistant</h1>
@@ -137,38 +85,63 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ===============================
-# INPUT
+# INPUT (UNCHANGED LAYOUT)
 # ===============================
 with st.form("ask_form", clear_on_submit=True):
     q = st.text_input("Ask a question")
 
-    c1, c2, c3 = st.columns([2, 1, 1])
-    ask = c2.form_submit_button("Ask")
-    clear = c3.form_submit_button("Clear chat")
+    col1, col2, col3 = st.columns([2, 1, 1])
+    ask = col2.form_submit_button("Ask")
+    clear = col3.form_submit_button("Clear chat")
 
 # ===============================
 # ACTIONS
 # ===============================
 if ask and q.strip():
-    tool = detect_tool(q)
-    answer = answer_question(q, tool)
-    st.session_state.chat[tool].append({"q": q, "a": answer})
+    if is_download_request(q):
+        sop = find_matching_sop(q)
+        if sop:
+            st.session_state.chat.append({
+                "q": q,
+                "a": f"📥 You can download the SOP below:",
+                "file": sop
+            })
+        else:
+            st.session_state.chat.append({
+                "q": q,
+                "a": "I couldn’t find a matching SOP to download."
+            })
+    else:
+        answer = answer_from_qa(q)
+        st.session_state.chat.append({"q": q, "a": answer})
+
     st.rerun()
 
 if clear:
-    tool = detect_tool(q) if q else "General"
-    st.session_state.chat[tool] = []
+    st.session_state.chat = []
     st.rerun()
 
 # ===============================
-# CHAT DISPLAY
+# CHAT RENDER (DESIGN PRESERVED)
 # ===============================
-tool = detect_tool(q) if q else "General"
-
-st.markdown('<div class="chat-container">', unsafe_allow_html=True)
-for item in st.session_state.chat[tool]:
+for item in st.session_state.chat:
     st.markdown(f"""
-    <div class="user-bubble">{item['q']}</div>
-    <div class="bot-bubble">{item['a']}</div>
+    <div style="background:#DCF8C6;padding:12px;border-radius:12px;margin-bottom:6px;">
+    {item['q']}
+    </div>
     """, unsafe_allow_html=True)
-st.markdown('</div>', unsafe_allow_html=True)
+
+    st.markdown(f"""
+    <div style="background:#F1F0F0;padding:12px;border-radius:12px;margin-bottom:12px;">
+    {item['a']}
+    </div>
+    """, unsafe_allow_html=True)
+
+    if "file" in item:
+        with open(os.path.join(DATA_DIR, item["file"]), "rb") as f:
+            st.download_button(
+                label=f"Download {item['file']}",
+                data=f,
+                file_name=item["file"],
+                mime="text/plain"
+            )
