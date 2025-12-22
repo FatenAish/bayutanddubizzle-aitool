@@ -16,11 +16,12 @@ st.set_page_config(
     layout="wide"
 )
 
-# Make columns gap smaller globally (helps Ask/Clear spacing)
+# ✅ Fix button wrapping + keep small gap (natural look)
 st.markdown(
     """
     <style>
-      div[data-testid="stHorizontalBlock"] { gap: 0.25rem; }
+      div[data-testid="stHorizontalBlock"] { gap: 0.4rem; }
+      button { white-space: nowrap !important; }  /* prevents A\ns\nk */
     </style>
     """,
     unsafe_allow_html=True
@@ -83,24 +84,33 @@ def bubble_style(mode: str) -> str:
     return "background:#F5F6F8;border:1px solid #E2E5EA;"
 
 def clean_answer(text: str) -> str:
-    """Very aggressive cleanup: removes citations, Q/A labels, turnXfileY, control chars, bullets."""
+    """
+    ✅ Natural output cleanup:
+    - removes citations + turnXfileY artifacts
+    - removes control chars
+    - removes bullets and asterisks
+    - returns clean paragraph(s)
+    """
     if not text:
         return ""
 
-    # Remove private-use citation blocks like: 
+    # Remove private-use citation blocks
     text = re.sub(r"", "", text, flags=re.DOTALL)
     text = re.sub(r"", "", text, flags=re.DOTALL)
 
-    # Remove any leftover turnXfileY artifacts (your example: turn3file0)
+    # Remove turnXfileY artifacts
     text = re.sub(r"turn\d+file\d+", "", text, flags=re.IGNORECASE)
     text = re.sub(r"turn\d+file\d+", "", text, flags=re.IGNORECASE)
 
-    # Remove ANY occurrence of "filecite" even if surrounded by weird box symbols
+    # Remove filecite word even if surrounded by weird symbols
     text = re.sub(r"[^A-Za-z0-9]*filecite[^A-Za-z0-9]*", "", text, flags=re.IGNORECASE)
 
     # Remove repeated Q:/A: tokens inside answers
     text = re.sub(r"\bQ:\s*", "", text)
     text = re.sub(r"\bA:\s*", "", text)
+
+    # Remove asterisks bullets like "* Verify ..."
+    text = text.replace("*", " ")
 
     # Strip control characters
     text = re.sub(r"[\x00-\x1F\x7F]", " ", text)
@@ -255,20 +265,26 @@ def load_sop_index(mode: str):
     return FAISS.from_documents(docs, emb)
 
 # ===============================
-# ANSWERING (FIXED ROUTER)
+# ANSWERING (FIXED ROUTER + NATURAL LISTINGS OUTPUT)
 # ===============================
 def is_marketing_file(name_lower: str) -> bool:
-    return any(k in name_lower for k in MARKETING_BLOCK)
+    nl = (name_lower or "").lower()
+    return any(k in nl for k in MARKETING_BLOCK)
 
 def is_listings_file(name_lower: str) -> bool:
-    return any(k in name_lower for k in LISTINGS_ALLOW) or name_lower.startswith("both")
+    nl = (name_lower or "").lower()
+    return any(k in nl for k in LISTINGS_ALLOW) or nl.startswith("both")
 
 def extract_sentences(text: str):
     parts = re.split(r"(?<=[\.\!\?])\s+|\n+", text)
     return [p.strip() for p in parts if p.strip()]
 
 def answer_from_sop_listings_first(question: str, sop_index):
-    """Listings intent MUST prefer listings/corrections SOP chunks and ignore marketing."""
+    """
+    ✅ Listings intent:
+    - only look at BOTH/listings/corrections files
+    - return a clean, natural 1–2 sentence answer (not raw bullets)
+    """
     if sop_index is None:
         return None
 
@@ -276,7 +292,6 @@ def answer_from_sop_listings_first(question: str, sop_index):
     if not results:
         return None
 
-    # keep only listings-related files, and drop marketing files
     filtered = []
     for d in results:
         src = (d.metadata or {}).get("source_file", "")
@@ -285,26 +300,42 @@ def answer_from_sop_listings_first(question: str, sop_index):
         if is_listings_file(src):
             filtered.append(d)
 
-    # if nothing found in listings files, do nothing (don’t fall back to marketing)
     if not filtered:
         return None
 
-    # Score sentences for best overlap
+    # Build a small evidence text from top chunks
+    evidence = " ".join((d.page_content or "") for d in filtered[:3])
+    ev = clean_answer(evidence).lower()
+
+    ops = "operations" in ev
+    handler = ("channel handler" in ev) or ("coordination" in ev)
+    submit = ("submit" in ev) or ("request" in ev) or ("content team" in ev) or ("content teams" in ev)
+
+    # Natural answer templates
+    if submit and ops and handler:
+        return ("The Content team submits the correction request, Operations updates the listing data once it’s approved, "
+                "and the Channel Handler verifies the change live on the platform.")
+    if ops and handler:
+        return ("Operations updates the listing data after approval, and the Channel Handler verifies the change live on the platform.")
+    if ops:
+        return "Operations updates the listing data after the correction is approved."
+    if handler:
+        return "The Channel Handler verifies the change live on the platform after it’s updated."
+
+    # Fallback: pick best 2 sentences
     cand = []
     for d in filtered[:4]:
-        src = (d.metadata or {}).get("source_file", "")
-        for s in extract_sentences(d.page_content):
+        for s in extract_sentences(d.page_content or ""):
             ov = keyword_overlap(question, s)
-            role_push = 1 if any(w in s.lower() for w in ["operations", "coordination", "handler", "verify", "submit", "request", "backend"]) else 0
-            cand.append((ov + role_push, s, src))
+            role_push = 1 if any(w in s.lower() for w in ["operations", "coordination", "channel handler", "verify", "submit", "request", "backend"]) else 0
+            cand.append((ov + role_push, s))
 
     cand.sort(key=lambda x: x[0], reverse=True)
-    best = [c[1] for c in cand[:3] if c[0] > 0]
-
+    best = [c[1] for c in cand[:2] if c[0] > 0]
     if best:
         return clean_answer(" ".join(best))
 
-    return clean_answer(filtered[0].page_content)[:450]
+    return clean_answer(filtered[0].page_content)[:350]
 
 def answer_from_qa(question: str, qa_index, answer_mode: str, history):
     if qa_index is None:
@@ -320,11 +351,8 @@ def answer_from_qa(question: str, qa_index, answer_mode: str, history):
     if not results:
         return None
 
-    ql = question.lower()
     listings_intent = is_listings_intent(question)
 
-    # HARD FILTER:
-    # If listings intent → accept ONLY listings/corrections QA and block marketing QA completely
     filtered = []
     for d in results:
         src = (d.metadata or {}).get("source_file", "")
@@ -338,7 +366,6 @@ def answer_from_qa(question: str, qa_index, answer_mode: str, history):
     if not filtered:
         return None
 
-    # pick the best by overlap with stored Q (to avoid random pick)
     best_doc = None
     best_score = -1
     for d in filtered:
@@ -347,7 +374,6 @@ def answer_from_qa(question: str, qa_index, answer_mode: str, history):
             best_score = ov
             best_doc = d
 
-    # require at least some overlap; otherwise treat as weak match
     if best_doc is None or best_score <= 0:
         return None
 
@@ -355,7 +381,6 @@ def answer_from_qa(question: str, qa_index, answer_mode: str, history):
     return ans if ans else None
 
 def smart_answer(question: str, qa_index, sop_index, answer_mode: str, history):
-    # CRITICAL ROUTE:
     # Listings intent → SOP listings first → QA listings only
     if is_listings_intent(question):
         a = answer_from_sop_listings_first(question, sop_index)
@@ -418,10 +443,10 @@ else:
 with st.form("ask_form", clear_on_submit=True):
     q = st.text_input("Ask a question")
 
-    # Buttons LEFT beside each other with tiny space
-    b1, b2, _sp = safe_columns([0.22, 0.35, 9.43], gap="small")
-    ask = b1.form_submit_button("Ask", use_container_width=True)
-    clear = b2.form_submit_button("Clear chat", use_container_width=True)
+    # ✅ FIX: keep buttons left + close + wide enough to avoid vertical letters
+    b1, b2, _sp = safe_columns([1, 1, 10], gap="small")
+    ask = b1.form_submit_button("Ask")
+    clear = b2.form_submit_button("Clear chat")
 
 # ===============================
 # CLEAR CHAT
@@ -469,7 +494,7 @@ for idx, item in enumerate(st.session_state.chat[tool_mode]):
         unsafe_allow_html=True
     )
 
-    # Answer below (cleaned)
+    # Answer below (cleaned + natural)
     a_txt = clean_answer(item.get("a", ""))
     if a_txt:
         st.markdown(a_txt)
