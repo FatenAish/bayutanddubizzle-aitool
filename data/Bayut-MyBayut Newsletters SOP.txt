@@ -1,0 +1,103 @@
+﻿MyBayut 
+Newsletters SOP
+  
+
+This SOP outlines the end-to-end process for planning, creating, reviewing, and sending out the MyBayut B2C weekly newsletters. These newsletters serve as a key communication channel between the brand and its audience, highlighting engaging and informative blog articles that reflect MyBayut’s voice and values.
+The SOP ensures that the newsletter creation process is consistent, timely, and aligned with MyBayut’s editorial and marketing objectives.
+Purpose
+The purpose of this SOP is to define a clear and structured process for producing and delivering weekly newsletters that feature content exclusively from the MyBayut blog. These newsletters aim to:
+* Deliver valuable and relevant blog content to readers in an engaging format.
+* Increase user engagement and encourage recurring visits to the MyBayut blog.
+* Drive qualified traffic to the website through targeted, high-quality articles.
+* Maintain consistency in editorial tone, visual identity, and publishing timelines.
+* Enhance brand presence by positioning MyBayut as a trusted real estate and lifestyle resource.
+Responsibilities:
+* Content Marketing Team:
+   * Prepares the monthly content calendar for the AR and EN B2C newsletters.
+   * Selects relevant topics and articles to be featured.
+   * Writes customised content tailored to the audience and brand tone.
+   * Conducts internal testing to ensure accuracy in links, layout, and visuals.
+   * Monitors performance to ensure campaigns achieve optimal results.
+* Performance Marketing Team:
+   * Handles the technical setup and implementation of the newsletter
+POCs
+* Content Marketing Team
+   * EN POCs: Sabeeh Rizvi
+      * Writer: Laraib Anis
+   * AR POCs: Fatina AlHalaiqa
+      * Writer: Sana'a Yousef
+   * Final Content Approval: Sarah Alnawah 
+* Performance Marketing Team
+   * CLM: Muhammad Noshaiz
+Step-by-Step Workflow
+Step 1: Monthly Content Calendar
+* Prepare the monthly newsletter calendar by the 14th of every month
+* The calendar must include newsletter topics, featured articles, and links
+* Submit your work for review and approval by Sarah before proceeding to content creation
+Step 2: Content Creation
+* Prepare newsletter content weekly based on the approved calendar
+Step 3: Visuals/Design Requests
+* Submit visuals request to the Design Team after the monthly calendar is approved
+* Images must follow Bayut branding guidelines and match the newsletter layout
+* The writer is responsible for ensuring that all required visuals are submitted on time
+Step 4: Content Submission on Airtable
+* Upload the final newsletter copy, media, and links to the Airtable – Newsletter Section
+* Update the Status to "Ready for Editing"
+* The newsletter is automatically assigned to editors for review
+Step 5: Language Review & Status Update
+* The assigned Content Leads review content quality:
+   * Arabic newsletters: reviewed by Fatina AlHalaiqa
+   * English newsletters: reviewed by Sabeeh Rizvi
+* After edits and approval, the Editors change the Status in Airtable to "Ready for Testing"
+Step 6: Internal Testing
+* Once marked as "Ready for Testing", the newsletter is shared automatically with the team via the #bayut-newsletter Slack group
+* A test send is triggered on MoEngage for internal review
+* All stakeholders (writers, editors, and POCs) must review:
+   * Layout & formatting
+   * Links and buttons functionality
+   * Visual display and mobile view
+   * Correct blog/article links
+Step 7: Final Approval & Sending
+* After the test version is approved by the content team, it is submitted to Sarah Alnawahfor final approval
+* After approval, the Performance Marketing Team schedules the newsletter for distribution to the audience.
+Frequency & Schedule
+Newsletter
+	Test Schedule
+	Roll-out  Schedule
+	English Newsletter
+	Every Thursday
+	Every Friday
+	Arabic Newsletter
+	Every Tuesday
+	Every Wednesday
+	
+
+Monitoring & Performance Analysis
+* Newsletter performance is tracked using MoEngage analytics
+* Results should be extracted 5 days after sending the newsletter.
+* The results will be reflected in the Newsletter Report dashboard
+Weekly Report
+  
+
+  
+
+A weekly performance review must include:
+* Emails Sent
+* Open Rate
+* Clicks
+* CTR
+* Unsubscribes
+* Total Clicks
+* Traffic to Website
+* Traffic to SM
+* Traffic to Apps
+* Traffic to G Review
+References
+* AR Calendar Sheet
+* EN Calendar Sheet
+* Airtable – Newsletter Section
+* Newsletter Report dashboard
+
+
+By following this SOP, all teams ensure a smooth and organised newsletter production cycle that supports quality communication, cross-team coordination, and continuous performance optimisation. 
+Any suggestions for improvement or adjustments to this process should be communicated to the Content Marketing Manager for review and potential implementation in future updates.

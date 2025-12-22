@@ -1,0 +1,70 @@
+﻿Bayut
+Algolia Locations SOP
+  
+
+This SOP outlines the steps for adding Algolia Locations to articles, verifying that older articles have locations added in WordPress, and ensuring that all articles are ready for migration to the Strapi system.
+Purpose
+The purpose of this SOP is to ensure that all published blog articles have accurate Algolia Location tags added.
+Scope
+This process covers:
+* All published articles in WordPress
+* Both new and existing articles require location verification
+This process does not cover:
+* Unpublished or draft articles
+* Articles hosted outside of WordPress (e.g., test or training environments)
+* Articles that do not require Algolia Location tags (Such as discussion articles and those that cover the entire UAE rather than a specific emirate)
+Responsibilities
+* Sub-editor:
+   * Ensures every article has an assigned Algolia Location and updates the tracking sheet accordingly
+* Content Team:
+   * Adds locations to newly published articles
+RACI Matrix:
+Role
+	Responsible
+	Accountable
+	Consulted
+	Informed
+	Writer
+	        ✔
+	
+
+	
+
+	
+
+	Sub-editor
+	        ✔
+	         ✔
+	
+
+	
+
+	POCs
+* Content Marketing Team
+   * EN POCs: Sabeeh Rizvi
+   * AR POCs: mohammad. Alshkoor
+Step-by-Step Workflow
+Step 1: Workflow Frequency
+This task is performed weekly, every Sunday, to review all articles and ensure that:
+* Each published or updated article includes an Algolia Location, if needed
+* Every verified article is listed in the Articles Algolia Locations Google Sheet
+Step 2: Accessing the Blog and Tools
+* Open WordPress
+* Launch the Algolia Locations Tool to start the verification process
+* Open the Articles Algolia Locations Google Sheet that contains all articles and their corresponding Post IDs
+Step 3: Adding and Verifying New Articles
+* Add any newly published articles to the Google Sheet
+* Verify that the writer has correctly added the location
+* If the article is missing a location, manually add it using the Algolia Locations Tool
+* If the correct location is unavailable in Algolia, raise a request for a new index through the Product or Tech channel
+Step 4: Weekly Review of Updated Articles
+* Review all articles updated during the week
+* Ensure each article includes an Algolia Location
+* Confirm that every updated article is listed in the Google Sheet
+* If a writer repeatedly omits locations, inform the line manager for follow-up
+Frequency
+* Weekly (Sunday): Review all articles to ensure each one has an Algolia Location added and properly tracked in the sheet
+References
+* Algolia Locations Tool: used to add and verify locations
+* Articles Algolia Locations (Google Sheet): used to track all articles and their corresponding Post IDs
+* WordPress Dashboard: a platform used for article publication and updates

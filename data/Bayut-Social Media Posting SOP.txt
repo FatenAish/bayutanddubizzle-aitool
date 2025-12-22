@@ -1,0 +1,55 @@
+﻿Bayut
+Social Media Posting SOP
+  
+
+Purpose
+This SOP defines the end-to-end process for preparing, reviewing, approving, and publishing content on the Bayut Instagram page, covering planning, captioning, approvals, and posting, ensuring timeliness, quality, and brand consistency.
+Included:
+* Organic posts for Bayut channels (feed/reels/stories as applicable)
+* Calendar Planning
+* Captioning, approvals, and publishing
+Responsibilities
+* Content Team: Prepares the calendar, suggests ideas for social media, writes captions.
+* Social Media Team: Prepares briefs, follow up with designers, schedule and publish approved posts. Monitor post performance and maintain consistency
+* Design Team: Create visuals according to briefs and platform specs.
+POCs
+* Content Team
+   * AR: Malaak Is-Haqat | AR Approval: Areej Tawfiq Abu Reida
+   * EN: Fatima Khanum | EN Approval: Sabeeh Rizvi
+   * Final Approval: Sarah Alnawah
+* Social Media Team: Saima Abid& Emma Dourado
+Frequency
+A content calendar is prepared before the 10th of each month for the upcoming month, sent for approval, and then shared with the SM team. It should include up to 20 post ideas, from which the SM team selects based on their publishing schedule.
+Social Media Content Preparation Process
+Step 1: Content Planning
+* Fill the SM Calendar sheet with suggested content
+* Add the following details:
+   * Month
+   * Theme/ Campaign/ Language/ Priority Level/ Post details/ 
+   * Post Link
+   * Captions (if the post requires a caption)
+* Ensure all fields are completed accurately before the 10th of each month.
+Step 2: Creative Request
+* Social Media Team prepares a brief document including:
+   * Post title & caption
+   * Image reference or concept (if available)
+   * Platform dimensions (Instagram size)
+   * Visual preferences (e.g., feminine style, property theme, event focus)
+* Seek approval from Areej Tawfiq Abu Reida & Sarah Alnawah.
+* Once approved, upload the brief to the Design Request Form.
+* Share access with designers for creative development.
+* Responsibility: Writer, Sub-Editor, Line Manager, Design Team
+Step 4: Creative Approval and Finalizing
+* Design Team obtains final design approval from Areej Tawfiq Abu Reida& Sarah Alnawah.
+* Content Team uploads approved creatives to Airtable.
+* Social Media Team schedules or publishes the post on Instagram.
+Tools and Resources
+* Calendar Planner: Bayut Social Media Calendar.xlsx
+* Shutterstock Images: https://www.shutterstock.com/images
+* Design Request Form: https://airtable.com/appjWY1i9C9RMXVau/shrbW3P1v0SrhJrgf 
+* Brief Templates on Drive:
+   * Stories
+   * Mybayut Post
+   * Market Trends
+   * Area Guide
+   * Building Guide

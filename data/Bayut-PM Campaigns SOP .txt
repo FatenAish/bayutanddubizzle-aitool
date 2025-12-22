@@ -1,0 +1,78 @@
+﻿Bayut
+PM Campaigns SOP 
+  
+
+
+
+This SOP defines the full workflow for planning, producing, launching, and tracking paid marketing campaigns for bayut. It ensures consistency between content, design, and performance teams, and maintains alignment with budget allocation and business goals.
+Purpose
+The purpose of this SOP is to standardize the process of creating Paid Campaigns, including:
+* Campaign planning and budget allocation
+* Creative and content production workflow
+* Launch and tracking procedures
+* Collaboration between Content, Design, and Performance teams
+Scope
+This SOP applies to:
+* Content Team
+* Design Team
+* Performance Marketing Team
+It covers:
+* Traffic campaigns (FB Display + SEM DSA for Market Trends)
+* Creative formats (Image Ads + Carousel Ads)
+* Budget assignment and tracking
+* Reporting and results documentation
+
+
+Frequency
+* Campaigns are launched every month based on budget availability.
+Responsibilities
+* Content Marketing Team: Suggests topics, writes ads text. Oversees workflow, final review, and approvals.
+* Performance Marketing Team: Launches campaigns, sets targeting & budget, shares results.
+* Design Team: Creates Campaigns Creatives.
+
+
+POCs
+* Content Team
+   * En: Muhammad Shereyar& Sabeeh Rizvi
+   * Ar: Malaak Is-Haqat& Areej Tawfiq Abu Reida
+   * Approval: Sarah Alnawah
+* Performance Marketing: Omar Shahid
+Campaign Objectives & Channels
+Objectives
+* Traffic: Drive sessions to content and priority pages
+* Awareness: Increase brand visibility and awareness for new projects or services
+Allowed Channels / Formats
+* FB Display: Image Ads, Carousel Ads (traffic objective)
+* SEM – DSA (Market Trends): Feed-based ads to promote market trends articles
+Budgeting & Allocation Policy
+* Annual PM budget is confirmed by Performance Marketing.
+* Core rule: Yearly budget should be fully consumed within the year.
+* All budget entries and campaign metadata are tracked in:
+Sheet: “PM Content Campaigns” (budget tab)
+Step-by-Step Workflow
+Step 1: Budget & Objective
+   * Performance confirms the budget for the cycle.
+   * Content Team sets objective and selects channels: FB Display (+ DSA if Market Trends included).
+Step 2: PM Content Plan
+   * Post selection
+   * Primary text, headlines, descriptions (per format limits)
+   * Adds details to campaign sheet (Image + Carousel tabs)
+   * Content Review
+   * Content is shared with Sarah for review and approval
+Step 3: Creatives Request
+   * Request creatives from the design team through Airtable
+Step 4: Ads Review
+   * FB Display Ads are sent for Marketing Approvals
+Step 5: Request to Performance Marketing Team
+   * Content team pings Omar Shahid on Slack #content-pm-collaboration2:
+   * Cycle name + topics
+   * Assets & copy links
+   * Launch deadline (target 2 weeks)
+   * Performance Marketing team launches campaigns as requested
+Step 6: Results & Documentation
+   * Request results from Omar via email every month
+   * Monthly results and insights are added to this sheet
+   * All data automatically shows up in this dashboard
+Step 7: Year-End Control
+   * Ensure the annual budget is fully consumed
+   * Archive assets and summarize best-performing topics and creatives
