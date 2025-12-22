@@ -41,19 +41,15 @@ with st.sidebar:
     st.header("Tool")
     tool_mode = st.radio("", TOOLS, index=0)
 
-    # ensure keys always exist
+    # defensive init
     st.session_state.chat.setdefault(tool_mode, [])
     st.session_state.topic.setdefault(tool_mode, "")
-
-    st.markdown(" ")
-    st.header("Answer mode")
-    answer_mode = st.radio("", ["Ultra-Fast", "Thinking"], index=0)
 
     st.markdown(" ")
     if st.button("🔁 Rebuild Index"):
         shutil.rmtree(TMP_DIR, ignore_errors=True)
         st.cache_resource.clear()
-        st.success("Indexes rebuilt")
+        st.success("Index rebuilt")
 
 # ===============================
 # TITLE
@@ -71,7 +67,7 @@ st.markdown(
 )
 
 # ===============================
-# EMBEDDINGS (LOCAL ONLY)
+# EMBEDDINGS (LOCAL)
 # ===============================
 @st.cache_resource
 def get_embeddings():
@@ -82,8 +78,8 @@ def get_embeddings():
 # ===============================
 # FILE ROUTING
 # ===============================
-def file_allowed(filename: str, mode: str) -> bool:
-    f = filename.lower()
+def file_allowed(fname: str, mode: str) -> bool:
+    f = fname.lower()
     if mode == "General":
         return True
     if mode == "Bayut":
@@ -97,31 +93,22 @@ def file_allowed(filename: str, mode: str) -> bool:
 # ===============================
 @st.cache_resource
 def load_index(mode: str):
-    index_path = os.path.join(TMP_DIR, f"faiss_{mode.lower()}")
-    embeddings = get_embeddings()
+    path = os.path.join(TMP_DIR, f"faiss_{mode.lower()}")
+    emb = get_embeddings()
 
-    if os.path.exists(index_path):
-        return FAISS.load_local(
-            index_path,
-            embeddings,
-            allow_dangerous_deserialization=True
-        )
+    if os.path.exists(path):
+        return FAISS.load_local(path, emb, allow_dangerous_deserialization=True)
 
     docs = []
     for f in os.listdir(DATA_DIR):
         if f.endswith(".txt") and file_allowed(f, mode):
-            docs.extend(
-                TextLoader(os.path.join(DATA_DIR, f), encoding="utf-8").load()
-            )
+            docs.extend(TextLoader(os.path.join(DATA_DIR, f), encoding="utf-8").load())
 
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=900,
-        chunk_overlap=120
-    )
+    splitter = RecursiveCharacterTextSplitter(chunk_size=900, chunk_overlap=120)
     chunks = splitter.split_documents(docs)
 
-    index = FAISS.from_documents(chunks, embeddings)
-    index.save_local(index_path)
+    index = FAISS.from_documents(chunks, emb)
+    index.save_local(path)
     return index
 
 index = load_index(tool_mode)
@@ -129,60 +116,64 @@ index = load_index(tool_mode)
 # ===============================
 # QUESTION INTENT DETECTION
 # ===============================
-def is_definition(q: str) -> bool:
+def is_definition(q):
     return q.lower().startswith(("what is", "what are", "define"))
 
-def is_who(q: str) -> bool:
+def is_who(q):
     q = q.lower()
     return q.startswith("who ") or "who works" in q or "responsible" in q
 
+def is_person(q):
+    q = q.lower()
+    return any(name in q for name in ["faten", "aish", "poc"])
+
 # ===============================
-# QUERY CLEANING
+# CLEAN QUERY
 # ===============================
-def clean_query(q: str) -> str:
-    q = re.sub(r"\blunch\b", "launch", q, flags=re.IGNORECASE)
-    q = re.sub(r"\bcampains\b", "campaigns", q, flags=re.IGNORECASE)
-    q = re.sub(r"\bpm\b", "paid marketing", q, flags=re.IGNORECASE)
+def clean_query(q):
+    q = re.sub(r"\blunch\b", "launch", q, flags=re.I)
+    q = re.sub(r"\bcampains\b", "campaigns", q, flags=re.I)
     return q.strip()
 
 # ===============================
 # ANSWER STRATEGIES
 # ===============================
-def definition_answer(question, docs):
-    if not docs:
-        return "I couldn’t find a clear definition in the documentation."
-
+def definition_answer(q, docs):
     text = " ".join(d.page_content for d in docs)
-    sentences = re.split(r"(?<=[.!?])\s+", text)
-
-    for s in sentences:
-        if "is" in s.lower() or "are" in s.lower():
+    for s in re.split(r"(?<=[.!?])\s+", text):
+        if " is " in s.lower() or " are " in s.lower():
             return s.strip()
+    return "I couldn’t find a clear definition."
 
-    return sentences[0].strip()
-
-def role_answer(question, docs):
+def role_answer(q, docs):
     text = " ".join(d.page_content for d in docs).lower()
-
-    roles = []
+    lines = []
     for s in text.split("."):
-        if any(k in s for k in [
-            "responsible",
-            "sub-editor",
-            "content team",
-            "writer",
-            "editor",
-            "poc"
-        ]):
-            roles.append(s.strip())
-
-    if roles:
-        return " ".join(roles[:2]).capitalize()
-
+        if any(k in s for k in ["sub-editor", "content team", "responsible", "writer", "editor"]):
+            lines.append(s.strip())
+    if lines:
+        return " ".join(lines[:2]).capitalize()
     return "This responsibility is handled by the content and sub-editing teams."
 
+def person_answer(q, docs):
+    text = " ".join(d.page_content for d in docs).lower()
+
+    role = ""
+    duties = []
+
+    for s in text.split("."):
+        if "faten" in s and "content" in s:
+            role = s.strip()
+        if any(k in s for k in ["review", "correction", "verification", "arabic"]):
+            duties.append(s.strip())
+
+    if role:
+        return f"{role.capitalize()}. She is responsible for " + ", ".join(duties[:2]) + "."
+
+    return "I couldn’t find a clear role description for this person."
+
 # ===============================
-# UI — INPUT + BUTTONS
+# UI — INPUT + BUTTONS (UNDER INPUT)
 # ===============================
 st.subheader("Ask your internal question")
 
@@ -190,16 +181,16 @@ q = st.text_input("Question", label_visibility="collapsed")
 
 btn1, btn2 = st.columns(2)
 with btn1:
-    ask_clicked = st.button("Ask", use_container_width=True)
+    ask = st.button("Ask", use_container_width=True)
 with btn2:
-    clear_clicked = st.button("Clear chat", use_container_width=True)
+    clear = st.button("Clear chat", use_container_width=True)
 
-if clear_clicked:
+if clear:
     st.session_state.chat[tool_mode] = []
     st.session_state.topic[tool_mode] = ""
     st.rerun()
 
-if ask_clicked:
+if ask:
     q_clean = clean_query(q)
 
     topic = st.session_state.topic[tool_mode]
@@ -207,7 +198,10 @@ if ask_clicked:
 
     docs = index.similarity_search(search_q, k=4)
 
-    if is_who(q_clean):
+    if is_person(q_clean):
+        ans = person_answer(q_clean, docs)
+
+    elif is_who(q_clean):
         ans = role_answer(q_clean, docs)
 
     elif is_definition(q_clean):
@@ -217,13 +211,10 @@ if ask_clicked:
     else:
         ans = definition_answer(q_clean, docs)
 
-    st.session_state.chat[tool_mode].append({
-        "q": q_clean,
-        "a": ans
-    })
+    st.session_state.chat[tool_mode].append({"q": q_clean, "a": ans})
 
 # ===============================
-# CHAT HISTORY (PER TOOL)
+# CHAT HISTORY
 # ===============================
 for item in st.session_state.chat.get(tool_mode, []):
     st.markdown(
