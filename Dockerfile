@@ -7,10 +7,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# ✅ PRELOAD MODEL
+RUN python - <<EOF
+from sentence_transformers import SentenceTransformer
+SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+EOF
+
 EXPOSE 8080
 
-CMD ["streamlit", "run", "app.py", \
-     "--server.port=8080", \
-     "--server.address=0.0.0.0", \
-     "--server.headless=true", \
-     "--browser.gatherUsageStats=false"]
+CMD ["streamlit", "run", "app.py"]
