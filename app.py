@@ -112,20 +112,27 @@ def load_index(mode: str):
     return FAISS.from_documents(chunks, embeddings)
 
 # ===============================
-# CLEAN ANSWER (REMOVE FILECITE)
+# CLEAN ANSWER (REMOVE FILECITE - ROBUST)
 # ===============================
 def clean_answer(text: str) -> str:
     if not text:
         return ""
 
-    # Remove the exact marker
-    text = re.sub(r"", "", text)
+    # remove private-use glyphs + replacement chars (often show as boxes)
+    text = re.sub(r"[\uE000-\uF8FF\uFFFD]", "", text)
 
-    # Extra safety: remove any leftover "filecite turnXfileY" fragments
-    text = re.sub(r"filecite\s*turn\d+file\d+", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"turn\d+file\d+", "", text, flags=re.IGNORECASE)
+    # remove any token that contains filecite (handles weird wrappers like �filecite�turn5file0�)
+    text = re.sub(r"\S*filecite\S*", " ", text, flags=re.IGNORECASE)
 
-    return text.strip()
+    # remove any token that contains turnXfileY (extra safety)
+    text = re.sub(r"\S*turn\d+file\d+\S*", " ", text, flags=re.IGNORECASE)
+
+    # remove the exact marker too (in case it appears cleanly)
+    text = re.sub(r"", " ", text)
+
+    # normalize spaces
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
 
 # ===============================
 # STRICT ANSWER EXTRACTION
@@ -137,18 +144,16 @@ def extract_answer_only(question, docs):
 
     for d in docs:
         text = d.page_content
-
         blocks = re.split(r"\nQ:\s*", text)
+
         for block in blocks:
             if "\nA:" not in block:
                 continue
 
             q_part, a_part = block.split("\nA:", 1)
-
             q_text = q_part.strip().lower()
             a_text = a_part.strip()
 
-            # Remove anything after next Q:
             a_text = re.split(r"\nQ:\s*", a_text)[0].strip()
 
             score = len(q_words & set(re.findall(r"\w+", q_text)))
@@ -204,7 +209,6 @@ def pick_sop_files(mode: str, question: str):
     if not files:
         return []
 
-    # Optional filtering by keywords in the question (after removing common words)
     stop = {"download", "dl", "get", "sop", "sops", "please", "the", "a", "an", "for", "to", "of"}
     tokens = [t for t in re.findall(r"[a-zA-Z0-9]+", question.lower()) if t not in stop]
 
@@ -220,7 +224,7 @@ def pick_sop_files(mode: str, question: str):
     scored.sort(key=lambda x: x[0], reverse=True)
     best_score = scored[0][0]
     if best_score == 0:
-        return files  # no match → show all for that mode
+        return files
     return [fp for s, fp in scored if s == best_score]
 
 # ===============================
@@ -229,10 +233,12 @@ def pick_sop_files(mode: str, question: str):
 with st.form("ask_form", clear_on_submit=True):
     q = st.text_input("Ask a question")
 
-    # Buttons beside each other on the LEFT under the box
-    b1, b2, _sp = st.columns([1, 1, 6])
+    # Ask + Clear beside each other with tiny space
+    b1, b2 = st.columns(2, gap="small")
     ask = b1.form_submit_button("Ask")
     clear = b2.form_submit_button("Clear chat")
+
+# Enter key will submit form -> triggers first submit button (Ask) ✅
 
 # ===============================
 # CLEAR CHAT
@@ -245,17 +251,12 @@ if clear:
 # HANDLE QUESTION
 # ===============================
 if ask and q.strip():
-    # If user requests SOP download in chat → show download buttons
     if is_download_sop_request(q):
         files = pick_sop_files(tool_mode, q)
-
         if not files:
-            answer = "No SOP files found to download."
-            st.session_state.chat[tool_mode].append({"q": q, "a": answer, "downloads": []})
+            st.session_state.chat[tool_mode].append({"q": q, "a": "No SOP files found to download.", "downloads": []})
         else:
-            answer = "Here are the SOP files you can download:"
-            st.session_state.chat[tool_mode].append({"q": q, "a": answer, "downloads": files})
-
+            st.session_state.chat[tool_mode].append({"q": q, "a": "Here are the SOP files you can download:", "downloads": files})
         st.rerun()
 
     index = load_index(tool_mode)
@@ -270,50 +271,55 @@ if ask and q.strip():
     else:
         answer = thinking_answer(q, docs, st.session_state.chat[tool_mode])
 
-    st.session_state.chat[tool_mode].append({
-        "q": q,
-        "a": answer
-    })
+    st.session_state.chat[tool_mode].append({"q": q, "a": answer})
     st.rerun()
 
 # ===============================
-# CHAT HISTORY (PER TOOL)
+# CHAT HISTORY (NEWEST FIRST)
+# - bubble ONLY for question
 # ===============================
-def bubble_style(mode: str) -> str:
+def bubble_css(mode: str) -> str:
     if mode == "Bayut":
         return "background:#EAF7F1;border:1px solid #BFE6D5;"  # light green
     if mode == "dubizzle":
         return "background:#FCEBEC;border:1px solid #F3C1C5;"  # light red
     return "background:#F5F6F8;border:1px solid #E2E5EA;"      # neutral
 
-style = bubble_style(tool_mode)
+style = bubble_css(tool_mode)
+chat_list = st.session_state.chat[tool_mode]
 
-for idx, item in enumerate(st.session_state.chat[tool_mode]):
-    # Bubble
+# render newest above oldest (reverse order) while keeping stable indices for download keys
+for i in range(len(chat_list) - 1, -1, -1):
+    item = chat_list[i]
+
+    # Question bubble ONLY
     st.markdown(
         f"""
-        <div style="{style} padding:12px;border-radius:10px;margin-bottom:10px;">
-            <b>Q:</b> {item['q']}<br><br>
-            {item['a']}
+        <div style="{style} padding:12px;border-radius:10px;margin-bottom:8px;">
+            {item['q']}
         </div>
         """,
         unsafe_allow_html=True
     )
 
-    # Download buttons inside chat (only when requested)
+    # Answer plain text (no bubble, no "A:")
+    st.markdown(item.get("a", ""))
+
+    # Download buttons inside chat ONLY when user asked
     downloads = item.get("downloads", [])
     if downloads:
         cols = st.columns(min(3, len(downloads)))
-        for i, fp in enumerate(downloads):
-            col = cols[i % len(cols)]
-            filename = os.path.basename(fp).replace("-QA.txt", "").replace("_", " ")
-
+        for j, fp in enumerate(downloads):
+            col = cols[j % len(cols)]
+            label_name = os.path.basename(fp).replace("-QA.txt", "").replace("_", " ")
             with col:
                 with open(fp, "rb") as f:
                     st.download_button(
-                        label=f"Download {filename}",
+                        label=f"Download {label_name}",
                         data=f.read(),
                         file_name=os.path.basename(fp),
                         mime="text/plain",
-                        key=f"dl_{tool_mode}_{idx}_{i}_{os.path.basename(fp)}"
+                        key=f"dl_{tool_mode}_{i}_{j}_{os.path.basename(fp)}"
                     )
+
+    st.markdown("---")
