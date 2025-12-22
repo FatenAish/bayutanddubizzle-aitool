@@ -1,9 +1,18 @@
 import os
-import streamlit as st
+import re
+import html
+import time
+import shutil
 import hashlib
+import streamlit as st
+
+from langchain_community.vectorstores import FAISS
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_core.documents import Document
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 # =====================================================
-# 🔐 HARD ACCESS GATE (SESSION + URL LOCK)
+# 🔐 HARD ACCESS GATE (SESSION + URL LOCK) — MUST BE FIRST
 # =====================================================
 ACCESS_CODE = os.getenv("ACCESS_CODE", "")
 REQUIRE_CODE = os.getenv("REQUIRE_CODE", "0") == "1"
@@ -13,16 +22,11 @@ def _h(code: str) -> str:
 
 if REQUIRE_CODE:
     expected = _h(ACCESS_CODE)
-
     qp = st.experimental_get_query_params()
     unlocked = st.session_state.get("unlock_hash") == expected
 
-    # 🚨 FORCE LOCK if URL is clean
     if not unlocked or qp.get("locked") != ["0"]:
-        st.set_page_config(
-            page_title="Bayut & Dubizzle – Access Required",
-            layout="centered"
-        )
+        st.set_page_config(page_title="Bayut & Dubizzle – Access Required", layout="centered")
 
         st.markdown(
             """
@@ -51,14 +55,10 @@ if REQUIRE_CODE:
 
         st.stop()
 
-
 # ===============================
-# PAGE CONFIG (MAIN APP)
+# PAGE CONFIG
 # ===============================
-st.set_page_config(
-    page_title="Bayut & Dubizzle Internal Assistant",
-    layout="wide"
-)
+st.set_page_config(page_title="Bayut & Dubizzle Internal Assistant", layout="wide")
 
 # ===============================
 # UI CSS
@@ -66,32 +66,12 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-      div[data-testid="stHorizontalBlock"] { gap: 0.12rem; }
-      button { white-space: nowrap !important; }
-
-      .mode-title{
-        font-size: 20px;
-        font-weight: 750;
-        margin: 6px 0;
-      }
-
-      .question-wrap{
-        max-width: 980px;
-        margin: 10px auto;
-      }
-
+      .mode-title{font-size:20px;font-weight:700;margin:6px 0;}
+      .question-wrap{max-width:980px;margin:10px auto;}
       .question-wrap [data-testid="stForm"]{
-        border: 1px solid #E7E9EE;
-        border-radius: 12px;
-        padding: 16px 18px 10px;
-        background: #fff;
+        border:1px solid #E7E9EE;border-radius:12px;padding:16px;background:#fff;
       }
-
-      .question-wrap div[data-testid="stTextInput"] > label {
-        display:none;
-      }
-
-      hr { margin: 14px 0; }
+      .question-wrap label{display:none;}
     </style>
     """,
     unsafe_allow_html=True
@@ -104,32 +84,25 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 
 # ===============================
-# OFFLINE HF MODEL
+# HF OFFLINE CACHE
 # ===============================
-# If your Dockerfile preloads the model into /models, we copy it into /tmp/models (writable at runtime).
 MODEL_SRC = "/models"
 MODEL_CACHE = "/tmp/models"
 
-def _copy_baked_model_to_tmp():
+def _copy_baked_model():
     try:
         if os.path.isdir(MODEL_SRC):
             os.makedirs(MODEL_CACHE, exist_ok=True)
-            # Only copy once if tmp cache is empty
             if not os.listdir(MODEL_CACHE):
-                for item in os.listdir(MODEL_SRC):
-                    s = os.path.join(MODEL_SRC, item)
-                    d = os.path.join(MODEL_CACHE, item)
-                    if os.path.isdir(s):
-                        shutil.copytree(s, d, dirs_exist_ok=True)
-                    else:
-                        shutil.copy2(s, d)
+                for i in os.listdir(MODEL_SRC):
+                    s = os.path.join(MODEL_SRC, i)
+                    d = os.path.join(MODEL_CACHE, i)
+                    shutil.copytree(s, d, dirs_exist_ok=True) if os.path.isdir(s) else shutil.copy2(s, d)
     except Exception:
-        # Do not crash UI because of copying
         pass
 
-_copy_baked_model_to_tmp()
+_copy_baked_model()
 
-# Force all HF libs to use writable cache + offline mode
 os.environ["HF_HOME"] = MODEL_CACHE
 os.environ["TRANSFORMERS_CACHE"] = MODEL_CACHE
 os.environ["SENTENCE_TRANSFORMERS_HOME"] = MODEL_CACHE
@@ -139,36 +112,12 @@ os.environ["TRANSFORMERS_OFFLINE"] = "1"
 # ===============================
 # SESSION STATE
 # ===============================
-if "chat" not in st.session_state or not isinstance(st.session_state.chat, dict):
-    st.session_state.chat = {}
-
-# migrate legacy key: "dubizzle" -> "Dubizzle" (extra safety)
-if "dubizzle" in st.session_state.chat and "Dubizzle" not in st.session_state.chat:
-    st.session_state.chat["Dubizzle"] = st.session_state.chat.pop("dubizzle")
-
-st.session_state.chat.setdefault("General", [])
-st.session_state.chat.setdefault("Bayut", [])
-st.session_state.chat.setdefault("Dubizzle", [])
-
-THINKING_DELAY_SECONDS = 1.2
-
-# ===============================
-# FILE RULES
-# ===============================
-DOWNLOAD_ONLY_FILES = {
-    "bayut-algolia locations sop.txt",
-    "bayut-mybayut newsletters sop.txt",
-    "bayut-pm campaigns sop.txt",
-    "bayut-social media posting sop.txt",
-    "both corrections and updates for listings.txt",
-    "dubizzle newsletters sop.txt",
-    "dubizzle pm campaigns sop.txt",
-}
+st.session_state.setdefault("chat", {"General": [], "Bayut": [], "Dubizzle": []})
 
 # ===============================
 # HELPERS
 # ===============================
-def read_text(fp: str) -> str:
+def read_text(fp):
     try:
         with open(fp, "r", encoding="utf-8") as f:
             return f.read()
@@ -176,32 +125,16 @@ def read_text(fp: str) -> str:
         with open(fp, "r", encoding="utf-8-sig") as f:
             return f.read()
 
-def clean_answer(text: str) -> str:
-    if not text:
-        return ""
-    text = re.sub(r"\bQ:\s*|\bA:\s*", "", text)
-    text = re.sub(r"\s{2,}", " ", text)
-    return text.strip()
+def clean_answer(txt):
+    txt = re.sub(r"\bQ\d*\s*[:–-]?\s*", "", txt)
+    txt = re.sub(r"\bA\s*[:–-]?\s*", "", txt)
+    return re.sub(r"\s{2,}", " ", txt).strip()
 
-def bubble_style(mode: str) -> str:
-    if mode == "Bayut":
-        return "background:#EAF7F1;border:1px solid #BFE6D5;"
-    if mode == "Dubizzle":
-        return "background:#FCEBEC;border:1px solid #F3C1C5;"
-    return "background:#F5F6F8;border:1px solid #E2E5EA;"
-
-def list_txt_files():
-    if not os.path.isdir(DATA_DIR):
-        return []
-    return sorted(
-        os.path.join(DATA_DIR, f)
-        for f in os.listdir(DATA_DIR)
-        if f.lower().endswith(".txt")
-    )
-
+# ===============================
+# EMBEDDINGS
+# ===============================
 @st.cache_resource
 def get_embeddings():
-    # Offline-only: will fail if model wasn't cached in image or copied successfully
     return HuggingFaceEmbeddings(
         model_name="sentence-transformers/all-MiniLM-L6-v2",
         cache_folder=MODEL_CACHE,
@@ -209,26 +142,40 @@ def get_embeddings():
     )
 
 # ===============================
-# (OPTIONAL) INDEX BUILD PLACEHOLDERS
+# 🔥 BUILD FAISS INDEX FROM /data
 # ===============================
 @st.cache_resource
-def load_placeholder_index():
-    # Keep imports used and prevent “unused” logic issues; replace with your real indexing if needed.
-    emb = get_embeddings()
-    docs = [Document(page_content="hello", metadata={"answer": "hi"})]
-    return FAISS.from_documents(docs, emb)
+def build_index():
+    if not os.path.isdir(DATA_DIR):
+        raise RuntimeError("❌ /data folder not found")
+
+    docs = []
+    splitter = RecursiveCharacterTextSplitter(chunk_size=900, chunk_overlap=150)
+
+    for file in os.listdir(DATA_DIR):
+        if not file.lower().endswith(".txt"):
+            continue
+
+        raw = read_text(os.path.join(DATA_DIR, file))
+        for chunk in splitter.split_text(raw):
+            docs.append(Document(
+                page_content=chunk,
+                metadata={"source": file}
+            ))
+
+    if not docs:
+        raise RuntimeError("❌ No readable .txt files found")
+
+    return FAISS.from_documents(docs, get_embeddings())
+
+VECTORSTORE = build_index()
 
 # ===============================
 # SIDEBAR
 # ===============================
 with st.sidebar:
-    st.header("Select tool")
-    tool_mode = st.radio("", ["General", "Bayut", "Dubizzle"], index=0)
-    st.markdown("---")
-    answer_mode = st.radio("Answer mode", ["Ultra-Fast", "Thinking"], index=0)
-
-chat_key = tool_mode
-st.session_state.chat.setdefault(chat_key, [])
+    tool_mode = st.radio("Select tool", ["General", "Bayut", "Dubizzle"])
+    answer_mode = st.radio("Answer mode", ["Ultra-Fast", "Thinking"])
 
 # ===============================
 # MAIN TITLE
@@ -249,73 +196,36 @@ st.markdown(
 # QUESTION UI
 # ===============================
 st.markdown('<div class="question-wrap">', unsafe_allow_html=True)
-
-if tool_mode == "Bayut":
-    st.markdown(
-        '<div class="mode-title">Ask <span style="color:#0E8A6D;font-weight:800;">Bayut</span> Anything</div>',
-        unsafe_allow_html=True
-    )
-elif tool_mode == "Dubizzle":
-    st.markdown(
-        '<div class="mode-title">Ask <span style="color:#D71920;font-weight:800;">Dubizzle</span> Anything</div>',
-        unsafe_allow_html=True
-    )
-else:
-    st.markdown('<div class="mode-title">General Assistant</div>', unsafe_allow_html=True)
+st.markdown(f'<div class="mode-title">{tool_mode} Assistant</div>', unsafe_allow_html=True)
 
 with st.form("ask_form", clear_on_submit=True):
     q = st.text_input("", placeholder="Type your question here...")
-
-    left, mid, right = st.columns([4, 2.3, 4])
-    with mid:
-        b1, b2 = st.columns([1, 1], gap="small")
-        ask = b1.form_submit_button("Ask")
-        clear = b2.form_submit_button("Clear chat")
+    ask = st.form_submit_button("Ask")
 
 st.markdown("</div>", unsafe_allow_html=True)
 
 # ===============================
-# CLEAR CHAT
+# ANSWERING — REAL FILE SEARCH
 # ===============================
-if clear:
-    st.session_state.chat[chat_key] = []
-    st.rerun()
-
-# ===============================
-# HANDLE QUESTION (PLACEHOLDER ANSWERING)
-# ===============================
-def _fake_answer(question: str) -> str:
-    # Replace with your real logic
-    return "Answer logic already wired correctly."
-
-if ask and (q or "").strip():
+if ask and q:
     if answer_mode == "Thinking":
         with st.spinner("Thinking..."):
-            time.sleep(THINKING_DELAY_SECONDS)
+            time.sleep(1)
 
-    st.session_state.chat[chat_key].append({"q": q, "a": _fake_answer(q)})
+    results = VECTORSTORE.similarity_search(q, k=4)
+
+    if results:
+        answer = "\n\n".join(clean_answer(r.page_content) for r in results)
+    else:
+        answer = "No relevant information found in internal files."
+
+    st.session_state.chat[tool_mode].append({"q": q, "a": answer})
     st.rerun()
 
 # ===============================
-# CHAT HISTORY (NEWEST ON TOP)
+# CHAT HISTORY
 # ===============================
-style = bubble_style(chat_key)
-items = list(enumerate(st.session_state.chat.get(chat_key, [])))[::-1]
-
-for orig_idx, item in items:
-    q_txt = html.escape(item.get("q", ""))
-
-    st.markdown(
-        f"""
-        <div style="{style} padding:12px;border-radius:10px;margin-bottom:6px;">
-            <b>Q:</b> {q_txt}
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    a_txt = clean_answer(item.get("a", ""))
-    if a_txt:
-        st.markdown(a_txt)
-
+for item in reversed(st.session_state.chat[tool_mode]):
+    st.markdown(f"**Q:** {html.escape(item['q'])}")
+    st.markdown(item["a"])
     st.markdown("---")
