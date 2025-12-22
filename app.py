@@ -1,7 +1,6 @@
 import os
 import re
 import streamlit as st
-
 from langchain_community.vectorstores import FAISS
 from langchain_community.document_loaders import TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -30,14 +29,15 @@ st.session_state.setdefault("chat", {
     "dubizzle": []
 })
 
-st.session_state.setdefault("tool_mode", "General")
-
 # ===============================
 # SIDEBAR
 # ===============================
 with st.sidebar:
-    st.markdown("### Answer mode")
-    answer_mode = st.radio("", ["Ultra-Fast", "Thinking"], index=0)
+    st.header("Select tool")
+    tool_mode = st.radio("", ["General", "Bayut", "dubizzle"], index=0)
+
+    st.markdown("---")
+    answer_mode = st.radio("Answer mode", ["Ultra-Fast", "Thinking"], index=0)
 
 # ===============================
 # TITLE
@@ -49,27 +49,10 @@ st.markdown(
       <span style="color:#D71920;">dubizzle</span>
       AI Content Assistant
     </h1>
-    <p style="text-align:center;color:#666;">Internal AI Assistant</p>
+    <p style="text-align:center;color:#666;">Internal Q&A Assistant</p>
     """,
     unsafe_allow_html=True
 )
-
-# ===============================
-# CENTERED TOOL BUTTONS
-# ===============================
-st.markdown("<br>", unsafe_allow_html=True)
-
-c1, c2, c3 = st.columns([1, 2, 2])
-
-with c2:
-    if st.button("Bayut AI Assistant", use_container_width=True):
-        st.session_state.tool_mode = "Bayut"
-
-with c3:
-    if st.button("dubizzle AI Assistant", use_container_width=True):
-        st.session_state.tool_mode = "dubizzle"
-
-tool_mode = st.session_state.tool_mode
 
 # ===============================
 # QA FILE SELECTION
@@ -90,7 +73,7 @@ def get_qa_files(mode):
     return files
 
 # ===============================
-# BUILD INDEX
+# BUILD INDEX (LOCAL)
 # ===============================
 @st.cache_resource
 def load_index(mode):
@@ -106,7 +89,6 @@ def load_index(mode):
         chunk_size=900,
         chunk_overlap=100
     )
-
     chunks = splitter.split_documents(docs)
 
     embeddings = HuggingFaceEmbeddings(
@@ -116,39 +98,40 @@ def load_index(mode):
     return FAISS.from_documents(chunks, embeddings)
 
 # ===============================
-# CLEAN ANSWER (REMOVE CITATIONS)
-# ===============================
-def clean_answer(text):
-    text = re.sub(r"", "", text)
-    return text.strip()
-
-# ===============================
-# STRICT ANSWER EXTRACTION
+# STRICT ANSWER EXTRACTION (CRITICAL FIX)
 # ===============================
 def extract_answer_only(question, docs):
     q_words = set(re.findall(r"\w+", question.lower()))
+
     best_score = 0
     best_answer = None
 
     for d in docs:
-        blocks = re.split(r"\nQ:\s*", d.page_content)
+        text = d.page_content
+
+        # Split file into Q&A blocks
+        blocks = re.split(r"\nQ:\s*", text)
         for block in blocks:
             if "\nA:" not in block:
                 continue
 
             q_part, a_part = block.split("\nA:", 1)
-            q_text = q_part.lower()
-            a_text = re.split(r"\nQ:\s*", a_part)[0].strip()
+
+            q_text = q_part.strip().lower()
+            a_text = a_part.strip()
+
+            # Remove anything after next Q:
+            a_text = re.split(r"\nQ:\s*", a_text)[0].strip()
 
             score = len(q_words & set(re.findall(r"\w+", q_text)))
             if score > best_score:
                 best_score = score
                 best_answer = a_text
 
-    return clean_answer(best_answer) if best_answer else "I couldn’t find a clear answer to that."
+    return best_answer or "I couldn’t find a clear answer to that."
 
 # ===============================
-# THINKING MODE
+# THINKING MODE (CHAT-AWARE, STILL STRICT)
 # ===============================
 def thinking_answer(question, docs, history):
     q_words = set(re.findall(r"\w+", question.lower()))
@@ -161,7 +144,9 @@ def thinking_answer(question, docs, history):
     best_answer = None
 
     for d in docs:
-        blocks = re.split(r"\nQ:\s*", d.page_content)
+        text = d.page_content
+        blocks = re.split(r"\nQ:\s*", text)
+
         for block in blocks:
             if "\nA:" not in block:
                 continue
@@ -177,10 +162,10 @@ def thinking_answer(question, docs, history):
                 best_score = score
                 best_answer = a_text
 
-    return clean_answer(best_answer) if best_answer else "I couldn’t find a clear answer to that."
+    return best_answer or "I couldn’t find a clear answer to that."
 
 # ===============================
-# QUESTION INPUT
+# UI – QUESTION
 # ===============================
 st.subheader(f"{tool_mode} Assistant")
 
@@ -217,18 +202,17 @@ if ask and q.strip():
         "q": q,
         "a": answer
     })
-
     st.rerun()
 
 # ===============================
-# CHAT HISTORY
+# CHAT HISTORY (PER TOOL)
 # ===============================
 for item in st.session_state.chat[tool_mode]:
     st.markdown(
         f"""
         <div style="border:1px solid #ddd;padding:12px;border-radius:8px;margin-bottom:10px;">
         <b>Q:</b> {item['q']}<br><br>
-        {item['a']}
+        <b>A:</b> {item['a']}
         </div>
         """,
         unsafe_allow_html=True
