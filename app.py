@@ -1,13 +1,16 @@
 import os
 import re
-import time
 import shutil
 import streamlit as st
 
 from langchain_community.vectorstores import FAISS
 from langchain_community.document_loaders import TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_openai import OpenAIEmbeddings, ChatOpenAI
+
+# 🔑 LOCAL embeddings (NO OpenAI, NO rate limits)
+from langchain_community.embeddings import HuggingFaceEmbeddings
+
+from langchain_openai import ChatOpenAI
 
 # ===============================
 # PAGE CONFIG
@@ -22,7 +25,7 @@ st.set_page_config(
 # ===============================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
-INDEX_PATH = "/tmp/faiss_index"   # single persistent index
+INDEX_PATH = "/tmp/faiss_index"
 
 # ===============================
 # SESSION STATE
@@ -45,7 +48,7 @@ with st.sidebar:
         if os.path.exists(INDEX_PATH):
             shutil.rmtree(INDEX_PATH, ignore_errors=True)
         st.cache_resource.clear()
-        st.success("Index cleared. It will rebuild once on next question.")
+        st.success("Index cleared. It will rebuild once.")
 
 # ===============================
 # TITLE
@@ -63,44 +66,25 @@ st.markdown(
 )
 
 # ===============================
-# 🔑 SLOW + SAFE EMBEDDINGS (FIX)
+# LOCAL EMBEDDINGS (FINAL FIX)
 # ===============================
-class SlowSafeEmbeddings(OpenAIEmbeddings):
-    def embed_documents(self, texts):
-        results = []
-        batch_size = 10  # small batches prevent rate limit
-
-        for i in range(0, len(texts), batch_size):
-            batch = texts[i:i + batch_size]
-
-            while True:
-                try:
-                    results.extend(super().embed_documents(batch))
-                    time.sleep(0.4)  # intentional slowdown
-                    break
-                except Exception as e:
-                    if "RateLimit" in str(e):
-                        time.sleep(5)  # wait and retry
-                    else:
-                        raise
-        return results
-
 @st.cache_resource
 def get_embeddings():
-    return SlowSafeEmbeddings(model="text-embedding-3-small")
+    return HuggingFaceEmbeddings(
+        model_name="sentence-transformers/all-MiniLM-L6-v2"
+    )
 
 @st.cache_resource
 def get_llm():
     return ChatOpenAI(model="gpt-4o-mini", temperature=0)
 
 # ===============================
-# BUILD / LOAD INDEX (ONCE)
+# BUILD / LOAD INDEX (FAST, SAFE)
 # ===============================
 @st.cache_resource
 def load_index_once():
     embeddings = get_embeddings()
 
-    # FAST PATH — load existing index
     if os.path.exists(INDEX_PATH):
         return FAISS.load_local(
             INDEX_PATH,
@@ -108,7 +92,6 @@ def load_index_once():
             allow_dangerous_deserialization=True
         )
 
-    # BUILD ONCE
     docs = []
     for f in os.listdir(DATA_DIR):
         if f.lower().endswith(".txt"):
@@ -117,7 +100,7 @@ def load_index_once():
             )
 
     if not docs:
-        st.error("No usable .txt files found in /data")
+        st.error("No .txt files found in /data")
         st.stop()
 
     splitter = RecursiveCharacterTextSplitter(
@@ -133,7 +116,7 @@ def load_index_once():
 index = load_index_once()
 
 # ===============================
-# SMART QUERY FIXES
+# SMART QUERY CLEANING
 # ===============================
 def expand_query(q: str) -> str:
     x = q.strip()
