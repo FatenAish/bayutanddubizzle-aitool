@@ -1,6 +1,10 @@
 import os
 import streamlit as st
 
+st.write("DEBUG_REQUIRE_CODE =", os.getenv("REQUIRE_CODE"))
+st.write("DEBUG_ACCESS_CODE =", "SET" if os.getenv("ACCESS_CODE") else "MISSING")
+import streamlit as st
+
 REQUIRE_CODE = os.getenv("REQUIRE_CODE", "0") == "1"
 ACCESS_CODE = os.getenv("ACCESS_CODE", "")
 
