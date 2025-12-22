@@ -1,10 +1,10 @@
 MyBayut Newsletters – Q&A
 
 Q: What are MyBayut newsletters?
-A: MyBayut newsletters are weekly B2C email campaigns that feature selected blog articles from the MyBayut blog, serving as a key communication channel between the brand and its audience. fileciteturn4file0
+A: MyBayut newsletters are weekly B2C email campaigns that feature selected blog articles from the MyBayut blog, serving as a key communication channel between the brand and its audience. 
 
 Q: What is the purpose of MyBayut newsletters?
-A: The purpose is to deliver valuable blog content in an engaging format, drive qualified traffic to the website, increase user engagement, and maintain consistent editorial tone and brand identity. fileciteturn4file0
+A: The purpose is to deliver valuable blog content in an engaging format, drive qualified traffic to the website, increase user engagement, and maintain consistent editorial tone and brand identity. 
 
 Q: Which teams are involved in MyBayut newsletters?
 A: The process involves the Content Marketing Team, Design Team, and Performance Marketing Team. fileciteturn4file0
@@ -12,19 +12,19 @@ A: The process involves the Content Marketing Team, Design Team, and Performance
 Q: Who is responsible for MyBayut newsletters?
 A:
 - Content Marketing Team: prepares calendars, selects articles, writes content, tests newsletters, and monitors performance
-- Performance Marketing Team: handles technical setup, scheduling, and sending fileciteturn4file0
+- Performance Marketing Team: handles technical setup, scheduling, and sending
 
 Q: Who are the Points of Contact (POCs)?
 A:
 - EN Content: Sabeeh Rizvi (Writer: Laraib Anis)
 - AR Content: Fatina AlHalaiqa (Writer: Sana'a Yousef)
 - Final Content Approval: Sarah Alnawah
-- Performance Marketing (CLM): Muhammad Noshaiz fileciteturn4file0
+- Performance Marketing (CLM): Muhammad Noshaiz 
 
 Q: How often are MyBayut newsletters sent?
 A:
 - English newsletter: tested every Thursday, sent every Friday
-- Arabic newsletter: tested every Tuesday, sent every Wednesday fileciteturn4file0
+- Arabic newsletter: tested every Tuesday, sent every Wednesday 
 
 Q: How does the MyBayut newsletter workflow work?
 A:
@@ -37,25 +37,25 @@ A:
 7. Mark newsletter as “Ready for Testing”
 8. Run internal testing via MoEngage and Slack
 9. Submit for final approval
-10. Performance Marketing schedules and sends the newsletter fileciteturn4file0
+10. Performance Marketing schedules and sends the newsletter 
 
 Q: How is newsletter content reviewed?
 A:
 - Arabic newsletters are reviewed by Fatina AlHalaiqa
 - English newsletters are reviewed by Sabeeh Rizvi
-- Final approval is provided by Sarah Alnawah fileciteturn4file0
+- Final approval is provided by Sarah Alnawah 
 
 Q: How is internal testing done?
 A:
 - Test newsletters are shared via the #bayut-newsletter Slack group
 - A test send is triggered on MoEngage
-- Stakeholders review layout, links, visuals, and mobile view fileciteturn4file0
+- Stakeholders review layout, links, visuals, and mobile view 
 
 Q: How is newsletter performance tracked?
 A:
 - Performance is tracked using MoEngage analytics
 - Results are extracted 5 days after sending
-- Metrics are reflected in the Newsletter Report dashboard fileciteturn4file0
+- Metrics are reflected in the Newsletter Report dashboard 
 
 Q: What metrics are included in the weekly newsletter report?
 A:
@@ -63,4 +63,4 @@ A:
 - Open rate
 - Clicks and CTR
 - Unsubscribes
-- Traffic to website, social media, apps, and Google reviews fileciteturn4file0
+- Traffic to website, social media, apps, and Google reviews
