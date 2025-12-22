@@ -41,7 +41,7 @@ with st.sidebar:
     st.header("Tool")
     tool_mode = st.radio("", TOOLS, index=0)
 
-    # always ensure keys exist
+    # ensure keys always exist
     st.session_state.chat.setdefault(tool_mode, [])
     st.session_state.topic.setdefault(tool_mode, "")
 
@@ -53,7 +53,7 @@ with st.sidebar:
     if st.button("🔁 Rebuild Index"):
         shutil.rmtree(TMP_DIR, ignore_errors=True)
         st.cache_resource.clear()
-        st.success("Indexes cleared.")
+        st.success("Indexes rebuilt")
 
 # ===============================
 # TITLE
@@ -127,6 +127,16 @@ def load_index(mode: str):
 index = load_index(tool_mode)
 
 # ===============================
+# QUESTION INTENT DETECTION
+# ===============================
+def is_definition(q: str) -> bool:
+    return q.lower().startswith(("what is", "what are", "define"))
+
+def is_who(q: str) -> bool:
+    q = q.lower()
+    return q.startswith("who ") or "who works" in q or "responsible" in q
+
+# ===============================
 # QUERY CLEANING
 # ===============================
 def clean_query(q: str) -> str:
@@ -136,71 +146,53 @@ def clean_query(q: str) -> str:
     return q.strip()
 
 # ===============================
-# ULTRA-FAST SMART ANSWER (NO OPENAI)
+# ANSWER STRATEGIES
 # ===============================
-def ultra_fast_answer(question, docs):
+def definition_answer(question, docs):
     if not docs:
-        return "I couldn’t find a clear answer in the documentation."
+        return "I couldn’t find a clear definition in the documentation."
 
     text = " ".join(d.page_content for d in docs)
-
-    # definition-style compression
     sentences = re.split(r"(?<=[.!?])\s+", text)
-    key_sentences = [
-        s for s in sentences
-        if any(w in s.lower() for w in ["is", "are", "used", "purpose", "helps"])
-    ]
 
-    return " ".join(key_sentences[:2]).strip() or sentences[0].strip()
+    for s in sentences:
+        if "is" in s.lower() or "are" in s.lower():
+            return s.strip()
 
-# ===============================
-# THINKING ANSWER (OPTIONAL OPENAI)
-# ===============================
-def thinking_answer(question, docs):
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        return ultra_fast_answer(question, docs)
+    return sentences[0].strip()
 
-    from langchain_openai import ChatOpenAI
+def role_answer(question, docs):
+    text = " ".join(d.page_content for d in docs).lower()
 
-    llm = ChatOpenAI(
-        model="gpt-4o-mini",
-        temperature=0,
-        api_key=api_key
-    )
+    roles = []
+    for s in text.split("."):
+        if any(k in s for k in [
+            "responsible",
+            "sub-editor",
+            "content team",
+            "writer",
+            "editor",
+            "poc"
+        ]):
+            roles.append(s.strip())
 
-    context = " ".join(d.page_content for d in docs)[:1200]
+    if roles:
+        return " ".join(roles[:2]).capitalize()
 
-    prompt = f"""
-Explain clearly in 2–3 sentences.
-Do NOT copy SOP text.
-Answer like a colleague.
-
-Question:
-{question}
-
-Context:
-{context}
-
-Answer:
-"""
-    return llm.invoke(prompt).content.strip()
+    return "This responsibility is handled by the content and sub-editing teams."
 
 # ===============================
-# UI — ASK + CLEAR (SIDE BY SIDE)
+# UI — INPUT + BUTTONS
 # ===============================
 st.subheader("Ask your internal question")
 
-col1, col2, col3 = st.columns([6, 1, 1])
+q = st.text_input("Question", label_visibility="collapsed")
 
-with col1:
-    q = st.text_input("Question", label_visibility="collapsed")
-
-with col2:
-    ask_clicked = st.button("Ask")
-
-with col3:
-    clear_clicked = st.button("Clear")
+btn1, btn2 = st.columns(2)
+with btn1:
+    ask_clicked = st.button("Ask", use_container_width=True)
+with btn2:
+    clear_clicked = st.button("Clear chat", use_container_width=True)
 
 if clear_clicked:
     st.session_state.chat[tool_mode] = []
@@ -215,12 +207,16 @@ if ask_clicked:
 
     docs = index.similarity_search(search_q, k=4)
 
-    if answer_mode == "Ultra-Fast":
-        ans = ultra_fast_answer(q_clean, docs)
-    else:
-        ans = thinking_answer(q_clean, docs)
+    if is_who(q_clean):
+        ans = role_answer(q_clean, docs)
 
-    st.session_state.topic[tool_mode] = q_clean
+    elif is_definition(q_clean):
+        ans = definition_answer(q_clean, docs)
+        st.session_state.topic[tool_mode] = q_clean
+
+    else:
+        ans = definition_answer(q_clean, docs)
+
     st.session_state.chat[tool_mode].append({
         "q": q_clean,
         "a": ans
