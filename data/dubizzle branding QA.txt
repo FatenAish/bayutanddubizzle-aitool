@@ -1,4 +1,4 @@
-Q8 ñ What are the primary colors in the dubizzle style guide and what are their hex codes?
+Q8 ‚Äì What are the primary colors in the dubizzle style guide and what are their hex codes?
  The primary colors are:
 ? Flame: #e00000
 
@@ -6,11 +6,11 @@ Q8 ñ What are the primary colors in the dubizzle style guide and what are their 
 
 ? White: #ffffff
 
-Q9 ñ How should the primary color ìFlameî be used in dubizzle design?
+Q9 ‚Äì How should the primary color ‚ÄúFlame‚Äù be used in dubizzle design?
  Flame is used to establish hierarchy and actions within creative work. It helps draw attention to key elements, such as calls-to-action. Text on dark backgrounds should use white to ensure readability when paired with Flame and other dark tones.
-Q10 ñ What guidance is given about typography and color for readability in dubizzle designs?
+Q10 ‚Äì What guidance is given about typography and color for readability in dubizzle designs?
  The guidance recommends using white text only on dark backgrounds and following simple rules to maintain readability of copy. Color choices should always support legibility and clarity.
-Q11 ñ What are the defined shades of red in the dubizzle palette and when are they used?
+Q11 ‚Äì What are the defined shades of red in the dubizzle palette and when are they used?
  The defined shades of red are:
 ? Flame: #e00000
 
@@ -21,7 +21,7 @@ Q11 ñ What are the defined shades of red in the dubizzle palette and when are th
 ? Fourth: #f7baba
 
 These are the only reds allowed for text and design elements, used to create depth, hierarchy, and state variations while staying within a controlled red system.
-Q12 ñ What are the shades of grey in the dubizzle palette and what is each used for?
+Q12 ‚Äì What are the shades of grey in the dubizzle palette and what is each used for?
  The grey system includes:
 ? Ink (#212223): a core dark tone
 
@@ -34,7 +34,7 @@ Q12 ñ What are the shades of grey in the dubizzle palette and what is each used 
 ? Cloud (#eef0f1): used for borders and dividers only, and only on dark backgrounds
 
 Each shade has a specific role to create visual hierarchy and clarity.
-Q13 ñ What are the accent colors in the dubizzle style guide and what are they used for?
+Q13 ‚Äì What are the accent colors in the dubizzle style guide and what are they used for?
  Accent colors include:
 ? Cranberry: #f44778
 
@@ -51,8 +51,8 @@ Q13 ñ What are the accent colors in the dubizzle style guide and what are they u
 ? Royal: #6545ba
 
 They are used for marketing design such as infographics, social posts, banners, and similar materials.
-Q14 ñ What flexibility is allowed with dubizzle accent colors?
+Q14 ‚Äì What flexibility is allowed with dubizzle accent colors?
  Designers can use lighter or darker shades of these accent colors, but must not change the core color itself. In other words, you can adjust brightness or depth, but not shift the hue outside the defined palette.
-Q15 ñ How is the grey palette intended to support hierarchy in dubizzle designs?
+Q15 ‚Äì How is the grey palette intended to support hierarchy in dubizzle designs?
  The palette sets clear roles: Grease for headings, Charcoal for body copy, Smoke for less important or secondary elements, and Cloud for subtle UI elements like borders and dividers. This creates a consistent visual hierarchy and ensures that primary content remains readable while secondary information is visually de-emphasized.
 
