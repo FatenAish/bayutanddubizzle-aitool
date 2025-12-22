@@ -1,0 +1,58 @@
+Q8 – What are the primary colors in the dubizzle style guide and what are their hex codes?
+ The primary colors are:
+? Flame: #e00000
+
+? Ink: #212223
+
+? White: #ffffff
+
+Q9 – How should the primary color “Flame” be used in dubizzle design?
+ Flame is used to establish hierarchy and actions within creative work. It helps draw attention to key elements, such as calls-to-action. Text on dark backgrounds should use white to ensure readability when paired with Flame and other dark tones.
+Q10 – What guidance is given about typography and color for readability in dubizzle designs?
+ The guidance recommends using white text only on dark backgrounds and following simple rules to maintain readability of copy. Color choices should always support legibility and clarity.
+Q11 – What are the defined shades of red in the dubizzle palette and when are they used?
+ The defined shades of red are:
+? Flame: #e00000
+
+? Second: #e53b3b
+
+? Third: #ee7575
+
+? Fourth: #f7baba
+
+These are the only reds allowed for text and design elements, used to create depth, hierarchy, and state variations while staying within a controlled red system.
+Q12 – What are the shades of grey in the dubizzle palette and what is each used for?
+ The grey system includes:
+? Ink (#212223): a core dark tone
+
+? Grease (#2b2d2e): reserved for headings
+
+? Charcoal (#626465): used for paragraph text
+
+? Smoke (#b6b8b9): used for less important elements
+
+? Cloud (#eef0f1): used for borders and dividers only, and only on dark backgrounds
+
+Each shade has a specific role to create visual hierarchy and clarity.
+Q13 – What are the accent colors in the dubizzle style guide and what are they used for?
+ Accent colors include:
+? Cranberry: #f44778
+
+? Blaze: #ff7004
+
+? Sun: #fdb611
+
+? Atlantis: #74c942
+
+? Ice: #4dd4d8
+
+? Pacific: #02b0e0
+
+? Royal: #6545ba
+
+They are used for marketing design such as infographics, social posts, banners, and similar materials.
+Q14 – What flexibility is allowed with dubizzle accent colors?
+ Designers can use lighter or darker shades of these accent colors, but must not change the core color itself. In other words, you can adjust brightness or depth, but not shift the hue outside the defined palette.
+Q15 – How is the grey palette intended to support hierarchy in dubizzle designs?
+ The palette sets clear roles: Grease for headings, Charcoal for body copy, Smoke for less important or secondary elements, and Cloud for subtle UI elements like borders and dividers. This creates a consistent visual hierarchy and ensures that primary content remains readable while secondary information is visually de-emphasized.
+
