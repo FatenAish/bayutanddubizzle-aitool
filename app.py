@@ -6,6 +6,7 @@ import streamlit as st
 from langchain_community.vectorstores import FAISS
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_core.documents import Document
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 # ===============================
 # PAGE CONFIG
@@ -13,6 +14,16 @@ from langchain_core.documents import Document
 st.set_page_config(
     page_title="Bayut & dubizzle Internal Assistant",
     layout="wide"
+)
+
+# Reduce spacing between columns (buttons closer)
+st.markdown(
+    """
+    <style>
+      div[data-testid="stHorizontalBlock"] { gap: 0.35rem; }
+    </style>
+    """,
+    unsafe_allow_html=True
 )
 
 # ===============================
@@ -31,20 +42,38 @@ st.session_state.setdefault("chat", {
 })
 
 # ===============================
-# SMALL HELPERS
+# HELPERS
 # ===============================
 def safe_columns(spec, gap="small"):
-    """Backward compatible columns gap."""
     try:
         return st.columns(spec, gap=gap)
     except TypeError:
         return st.columns(spec)
 
-def norm_mode(mode: str) -> str:
-    return mode.strip()
+QA_PAIR_RE = re.compile(
+    r"(?:^|\n)Q:\s*(.*?)\nA:\s*([\s\S]*?)(?=\nQ:\s*|\Z)",
+    re.IGNORECASE
+)
+
+def parse_qa_pairs(text: str):
+    pairs = []
+    for m in QA_PAIR_RE.finditer(text):
+        q = (m.group(1) or "").strip()
+        a = (m.group(2) or "").strip()
+        if q and a:
+            pairs.append((q, a))
+    return pairs
+
+def read_text(fp: str) -> str:
+    try:
+        with open(fp, "r", encoding="utf-8") as f:
+            return f.read()
+    except UnicodeDecodeError:
+        with open(fp, "r", encoding="utf-8-sig") as f:
+            return f.read()
 
 def clean_answer(text: str) -> str:
-    """Remove internal citation markers and leftovers."""
+    """Remove filecite junk + hidden control chars; return plain readable text (no bullets)."""
     if not text:
         return ""
 
@@ -52,63 +81,114 @@ def clean_answer(text: str) -> str:
     text = re.sub(r"", "", text, flags=re.DOTALL)
     text = re.sub(r"", "", text, flags=re.DOTALL)
 
-    # Remove any leftover "filecite turnXfileY" fragments
-    text = re.sub(r"filecite\s*turn\d+file\d+", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"turn\d+file\d+", "", text, flags=re.IGNORECASE)
+    # Remove ANY occurrence of filecite even if surrounded by weird boxes
+    text = re.sub(r"[^A-Za-z0-9]*filecite[^A-Za-z0-9]*", "", text, flags=re.IGNORECASE)
 
-    # Trim extra blank lines
-    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+    # Strip control chars
+    text = re.sub(r"[\x00-\x1F\x7F]", " ", text)
+
+    # Flatten bullets into one clean paragraph
+    lines = []
+    for line in text.splitlines():
+        line = line.strip()
+        line = re.sub(r"^[•\-\u2022]\s*", "", line)
+        if line:
+            lines.append(line)
+
+    text = " ".join(lines)
+    text = re.sub(r"\s{2,}", " ", text).strip()
     return text
 
 def is_download_sop_request(question: str) -> bool:
     q = question.lower().strip()
     return (("download" in q) or ("dl" in q) or ("get" in q)) and (("sop" in q) or ("sops" in q))
 
+def bubble_style(mode: str) -> str:
+    if mode == "Bayut":
+        return "background:#EAF7F1;border:1px solid #BFE6D5;"
+    if mode == "dubizzle":
+        return "background:#FCEBEC;border:1px solid #F3C1C5;"
+    return "background:#F5F6F8;border:1px solid #E2E5EA;"
+
+def topic_bonus(question_lower: str, source_file_lower: str) -> int:
+    listing_intent = any(k in question_lower for k in [
+        "listing", "listings", "wrong name", "wrong names", "correction", "correct", "update",
+        "merge", "archive", "location", "algolia"
+    ])
+
+    if listing_intent:
+        if any(k in source_file_lower for k in ["correction", "update", "listing", "listings", "location", "algolia"]):
+            return 4
+        if any(k in source_file_lower for k in ["pm", "campaign", "newsletter", "social", "paid"]):
+            return -4
+    return 0
+
+def keyword_overlap(a: str, b: str) -> int:
+    aw = set(re.findall(r"[a-zA-Z0-9]+", a.lower()))
+    bw = set(re.findall(r"[a-zA-Z0-9]+", b.lower()))
+    return len(aw & bw)
+
 # ===============================
 # FILE SELECTION
 # ===============================
-def get_qa_files(mode: str):
-    """Q&A retrieval source (only -QA.txt)."""
+def list_txt_files():
     if not os.path.isdir(DATA_DIR):
         return []
+    return sorted([os.path.join(DATA_DIR, f) for f in os.listdir(DATA_DIR) if f.lower().endswith(".txt")])
 
+def get_qa_files(mode: str):
+    """
+    QA sources are ONLY files that contain Q:/A: pairs.
+    (They might be named -QA.txt OR not — we detect by content.)
+    """
     files = []
-    for f in os.listdir(DATA_DIR):
-        if not f.endswith("-QA.txt"):
-            continue
+    for fp in list_txt_files():
+        name = os.path.basename(fp).lower()
 
-        lf = f.lower()
-        if mode == "Bayut" and not lf.startswith("bayut"):
-            continue
-        if mode == "dubizzle" and not lf.startswith("dubizzle"):
-            continue
+        # mode filtering
+        is_bayut = name.startswith("bayut")
+        is_dubizzle = name.startswith("dubizzle")
+        is_both = name.startswith("both")
+        is_general = name.startswith("general")
 
-        files.append(os.path.join(DATA_DIR, f))
-    return sorted(files)
+        if mode == "Bayut" and not (is_bayut or is_both or is_general):
+            continue
+        if mode == "dubizzle" and not (is_dubizzle or is_both or is_general):
+            continue
+        # General = everything
+
+        raw = read_text(fp)
+        if "Q:" in raw and "\nA:" in raw:
+            files.append(fp)
+
+    return files
 
 def get_sop_files(mode: str):
-    """Download source (non-QA SOP/reference txt files)."""
-    if not os.path.isdir(DATA_DIR):
-        return []
-
+    """
+    SOP sources are plain text files WITHOUT Q:/A: pairs.
+    We MUST include Both* for Bayut and dubizzle.
+    """
     files = []
-    for f in os.listdir(DATA_DIR):
-        if not f.lower().endswith(".txt"):
-            continue
-        if f.endswith("-QA.txt"):
-            continue  # keep QA only for answering
+    for fp in list_txt_files():
+        name = os.path.basename(fp).lower()
 
-        lf = f.lower()
-        if mode == "Bayut" and not lf.startswith("bayut"):
+        is_bayut = name.startswith("bayut")
+        is_dubizzle = name.startswith("dubizzle")
+        is_both = name.startswith("both")
+        is_general = name.startswith("general")
+
+        if mode == "Bayut" and not (is_bayut or is_both or is_general):
             continue
-        if mode == "dubizzle" and not lf.startswith("dubizzle"):
+        if mode == "dubizzle" and not (is_dubizzle or is_both or is_general):
             continue
 
-        # For General, include everything non-QA
-        files.append(os.path.join(DATA_DIR, f))
-    return sorted(files)
+        raw = read_text(fp)
+        if not ("Q:" in raw and "\nA:" in raw):
+            files.append(fp)
 
-def pick_sop_files(mode: str, question: str):
+    return files
+
+def pick_sop_files_for_download(mode: str, question: str):
     files = get_sop_files(mode)
     if not files:
         return []
@@ -132,108 +212,153 @@ def pick_sop_files(mode: str, question: str):
     return [fp for s, fp in scored if s == best_score]
 
 # ===============================
-# PARSE Q&A FILES → (Q, A) PAIRS
-# ===============================
-QA_PAIR_RE = re.compile(
-    r"(?:^|\n)Q:\s*(.*?)\nA:\s*([\s\S]*?)(?=\nQ:\s*|\Z)",
-    re.IGNORECASE
-)
-
-def parse_qa_pairs(text: str):
-    pairs = []
-    for m in QA_PAIR_RE.finditer(text):
-        q = (m.group(1) or "").strip()
-        a = (m.group(2) or "").strip()
-        if q and a:
-            pairs.append((q, a))
-    return pairs
-
-# ===============================
-# BUILD INDEX (Q-ONLY EMBEDDINGS)
+# BUILD INDICES
 # ===============================
 @st.cache_resource
-def load_index(mode: str):
+def load_qa_index(mode: str):
     qa_files = get_qa_files(mode)
     if not qa_files:
         return None
 
     docs = []
     for fp in qa_files:
-        try:
-            with open(fp, "r", encoding="utf-8") as f:
-                raw = f.read()
-        except UnicodeDecodeError:
-            with open(fp, "r", encoding="utf-8-sig") as f:
-                raw = f.read()
-
+        raw = read_text(fp)
         for q, a in parse_qa_pairs(raw):
-            docs.append(
-                Document(
-                    page_content=q.strip(),  # embed ONLY the question
-                    metadata={
-                        "answer": a.strip(),
-                        "source_file": os.path.basename(fp)
-                    }
-                )
-            )
+            docs.append(Document(
+                page_content=q.strip(),  # embed question only
+                metadata={
+                    "answer": a.strip(),
+                    "source_file": os.path.basename(fp).lower()
+                }
+            ))
 
     if not docs:
         return None
 
-    embeddings = HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-MiniLM-L6-v2"
-    )
+    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+    return FAISS.from_documents(docs, embeddings)
 
+@st.cache_resource
+def load_sop_index(mode: str):
+    sop_files = get_sop_files(mode)
+    if not sop_files:
+        return None
+
+    splitter = RecursiveCharacterTextSplitter(chunk_size=900, chunk_overlap=120)
+    docs = []
+
+    for fp in sop_files:
+        raw = read_text(fp)
+        chunks = splitter.split_text(raw)
+        for c in chunks:
+            docs.append(Document(
+                page_content=c,
+                metadata={"source_file": os.path.basename(fp).lower()}
+            ))
+
+    if not docs:
+        return None
+
+    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
     return FAISS.from_documents(docs, embeddings)
 
 # ===============================
-# SMART ANSWERING (INDIRECT QUESTIONS OK)
+# ANSWERING
 # ===============================
-def smart_answer(question: str, index, history, mode: str) -> str:
-    q = question.strip()
-    q_lower = q.lower()
-
-    # In "Thinking" mode we softly enrich the query using last user question (if any)
-    enriched = q
-    if history:
+def answer_from_qa(question: str, qa_index, answer_mode: str, history):
+    enriched = question
+    if answer_mode == "Thinking" and history:
         last_q = (history[-1].get("q") or "").strip()
         if last_q:
-            enriched = f"{q}\nRelated context: {last_q}"
+            enriched = f"{question}\nRelated: {last_q}"
 
-    # Fetch top matches
-    results = index.similarity_search(enriched, k=5)
-
+    # get more candidates then rerank by filename bonus
+    results = qa_index.similarity_search(enriched, k=10)
     if not results:
-        return "I couldn’t find a clear answer to that."
+        return None
 
-    # If user is asking "who..." about corrections/updates/listings, combine key roles
-    who_intent = q_lower.startswith("who") or q_lower.startswith("who ")
-    correction_intent = any(k in q_lower for k in ["correct", "correction", "update", "wrong", "name", "listing", "listings"])
+    q_lower = question.lower()
+    best_doc = None
+    best_score = -10_000
 
-    if who_intent and correction_intent:
-        role_answers = []
-        seen = set()
+    for d in results:
+        src = (d.metadata or {}).get("source_file", "")
+        bonus = topic_bonus(q_lower, src)
+        overlap = keyword_overlap(question, d.page_content)  # overlap with matched stored Q
+        score = bonus * 10 + overlap  # strong bias to correct file/topic + some lexical sanity
 
-        for d in results:
-            qq = (d.page_content or "").strip().lower()
-            ans = clean_answer((d.metadata or {}).get("answer", "")).strip()
-            if not ans:
-                continue
+        if score > best_score:
+            best_score = score
+            best_doc = d
 
-            # Prefer Qs that themselves are "Who ..."
-            if qq.startswith("who"):
-                key = re.sub(r"\s+", " ", ans.lower())
-                if key not in seen:
-                    seen.add(key)
-                    role_answers.append(ans)
+    if not best_doc:
+        return None
 
-        if role_answers:
-            # Join as a clean multi-sentence answer (no bullets forced)
-            return " ".join(role_answers).strip()
+    ans = clean_answer((best_doc.metadata or {}).get("answer", ""))
+    if not ans:
+        return None
 
-    # Default: best single match
-    best = results[0]
-    return clean_answer((best.metadata or {}).get("answer", "")).strip() or "I couldn’t find a clear answer to that."
+    # If overlap is extremely low, treat as weak match (fallback to SOP)
+    if keyword_overlap(question, best_doc.page_content) == 0:
+        return None
+
+    return ans
+
+def extract_sentences(text: str):
+    # Simple sentence split that works OK for SOPs
+    parts = re.split(r"(?<=[\.\!\?])\s+|\n+", text)
+    return [p.strip() for p in parts if p.strip()]
+
+def answer_from_sop(question: str, sop_index):
+    results = sop_index.similarity_search(question, k=8)
+    if not results:
+        return None
+
+    q_lower = question.lower()
+
+    # prefer chunks from "both corrections/listings" etc.
+    scored = []
+    for d in results:
+        src = (d.metadata or {}).get("source_file", "")
+        bonus = topic_bonus(q_lower, src)
+        scored.append((bonus, d))
+    scored.sort(key=lambda x: x[0], reverse=True)
+
+    # Take top 2 chunks after bonus
+    top_docs = [d for _, d in scored[:2]]
+
+    # Extract best sentences by overlap
+    cand = []
+    for d in top_docs:
+        for s in extract_sentences(d.page_content):
+            ov = keyword_overlap(question, s)
+            # extra push for role words
+            role_push = 1 if any(w in s.lower() for w in ["operations", "coordination", "channel handler", "verify", "submit", "request"]) else 0
+            cand.append((ov + role_push, s))
+
+    cand.sort(key=lambda x: x[0], reverse=True)
+    best = [c[1] for c in cand[:3] if c[0] > 0]
+
+    if not best:
+        # fallback: just return cleaned top chunk start
+        return clean_answer(top_docs[0].page_content)[:400]
+
+    return clean_answer(" ".join(best))
+
+def smart_answer(question: str, qa_index, sop_index, answer_mode: str, history):
+    # 1) try QA first (most accurate)
+    if qa_index is not None:
+        a = answer_from_qa(question, qa_index, answer_mode, history)
+        if a:
+            return a
+
+    # 2) fallback to SOP retrieval (this is what fixes "Both Corrections..." file)
+    if sop_index is not None:
+        a = answer_from_sop(question, sop_index)
+        if a:
+            return a
+
+    return "I couldn’t find a clear answer to that."
 
 # ===============================
 # SIDEBAR
@@ -241,7 +366,6 @@ def smart_answer(question: str, index, history, mode: str) -> str:
 with st.sidebar:
     st.header("Select tool")
     tool_mode = st.radio("", ["General", "Bayut", "dubizzle"], index=0)
-
     st.markdown("---")
     answer_mode = st.radio("Answer mode", ["Ultra-Fast", "Thinking"], index=0)
 
@@ -261,7 +385,7 @@ st.markdown(
 )
 
 # ===============================
-# TOOL HEADING (MAIN)
+# TOOL HEADING
 # ===============================
 if tool_mode == "Bayut":
     st.subheader("Ask Bayut Anything")
@@ -271,13 +395,13 @@ else:
     st.subheader("General Assistant")
 
 # ===============================
-# UI – QUESTION
+# QUESTION UI
 # ===============================
 with st.form("ask_form", clear_on_submit=True):
     q = st.text_input("Ask a question")
 
-    # Buttons closer together (tiny gap)
-    b1, b2 = safe_columns([1, 1], gap="small")
+    # Buttons LEFT beside each other (tiny gap) + spacer
+    b1, b2, _sp = safe_columns([1, 1, 10], gap="small")
     ask = b1.form_submit_button("Ask")
     clear = b2.form_submit_button("Clear chat")
 
@@ -289,53 +413,36 @@ if clear:
     st.rerun()
 
 # ===============================
-# HANDLE QUESTION
+# ANSWER
 # ===============================
 if ask and q.strip():
-    # Download SOP request → show download buttons in chat
+    # download SOP in chat
     if is_download_sop_request(q):
-        files = pick_sop_files(tool_mode, q)
-
+        files = pick_sop_files_for_download(tool_mode, q)
         if not files:
-            answer = "No SOP files found to download."
-            st.session_state.chat[tool_mode].append({"q": q, "a": answer, "downloads": []})
+            st.session_state.chat[tool_mode].append({"q": q, "a": "No SOP files found to download.", "downloads": []})
         else:
-            answer = "Here are the SOP files you can download:"
-            st.session_state.chat[tool_mode].append({"q": q, "a": answer, "downloads": files})
-
+            st.session_state.chat[tool_mode].append({"q": q, "a": "Here are the SOP files you can download:", "downloads": files})
         st.rerun()
 
-    index = load_index(tool_mode)
-    if index is None:
-        st.error("No Q&A files found.")
-        st.stop()
+    qa_index = load_qa_index(tool_mode)
+    sop_index = load_sop_index(tool_mode)
 
     history = st.session_state.chat[tool_mode]
-
-    if answer_mode == "Ultra-Fast":
-        answer = smart_answer(q, index, [], tool_mode)
-    else:
-        answer = smart_answer(q, index, history, tool_mode)
+    answer = smart_answer(q, qa_index, sop_index, answer_mode, history)
 
     st.session_state.chat[tool_mode].append({"q": q, "a": answer})
     st.rerun()
 
 # ===============================
-# CHAT HISTORY (PER TOOL)
+# CHAT HISTORY
 # ===============================
-def bubble_style(mode: str) -> str:
-    if mode == "Bayut":
-        return "background:#EAF7F1;border:1px solid #BFE6D5;"
-    if mode == "dubizzle":
-        return "background:#FCEBEC;border:1px solid #F3C1C5;"
-    return "background:#F5F6F8;border:1px solid #E2E5EA;"
-
 style = bubble_style(tool_mode)
 
 for idx, item in enumerate(st.session_state.chat[tool_mode]):
     q_txt = html.escape(item.get("q", ""))
 
-    # 1) ONLY QUESTION IN THE BUBBLE
+    # Only the question in the bubble
     st.markdown(
         f"""
         <div style="{style} padding:12px;border-radius:10px;margin-bottom:6px;">
@@ -345,19 +452,18 @@ for idx, item in enumerate(st.session_state.chat[tool_mode]):
         unsafe_allow_html=True
     )
 
-    # 2) ANSWER BELOW (NORMAL)
-    a_txt = item.get("a", "")
+    # Answer below (cleaned, no bullets)
+    a_txt = clean_answer(item.get("a", ""))
     if a_txt:
-        st.markdown(clean_answer(a_txt))
+        st.markdown(a_txt)
 
-    # 3) Download buttons inside chat (only when requested)
+    # Download buttons inside chat (only when requested)
     downloads = item.get("downloads", [])
     if downloads:
         cols = st.columns(min(3, len(downloads)))
         for i, fp in enumerate(downloads):
             col = cols[i % len(cols)]
             filename = os.path.basename(fp).replace("_", " ")
-
             with col:
                 with open(fp, "rb") as f:
                     st.download_button(
