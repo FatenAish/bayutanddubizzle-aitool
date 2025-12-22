@@ -41,7 +41,6 @@ with st.sidebar:
     st.header("Tool")
     tool_mode = st.radio("", TOOLS, index=0)
 
-    # defensive init
     st.session_state.chat.setdefault(tool_mode, [])
     st.session_state.topic.setdefault(tool_mode, "")
 
@@ -102,7 +101,9 @@ def load_index(mode: str):
     docs = []
     for f in os.listdir(DATA_DIR):
         if f.endswith(".txt") and file_allowed(f, mode):
-            docs.extend(TextLoader(os.path.join(DATA_DIR, f), encoding="utf-8").load())
+            docs.extend(
+                TextLoader(os.path.join(DATA_DIR, f), encoding="utf-8").load()
+            )
 
     splitter = RecursiveCharacterTextSplitter(chunk_size=900, chunk_overlap=120)
     chunks = splitter.split_documents(docs)
@@ -114,23 +115,26 @@ def load_index(mode: str):
 index = load_index(tool_mode)
 
 # ===============================
-# QUESTION INTENT DETECTION
+# INTENT DETECTION (THE FIX)
 # ===============================
-def is_definition(q):
-    return q.lower().startswith(("what is", "what are", "define"))
+def get_intent(q: str) -> str:
+    q = q.lower().strip()
 
-def is_who(q):
-    q = q.lower()
-    return q.startswith("who ") or "who works" in q or "responsible" in q
+    if q.startswith(("what is", "what are", "define")):
+        return "definition"
+    if q.startswith("who ") or "responsible" in q:
+        return "role"
+    if q.startswith("how ") or "steps" in q or "process" in q:
+        return "process"
+    if any(name in q for name in ["faten", "aish", "poc"]):
+        return "person"
 
-def is_person(q):
-    q = q.lower()
-    return any(name in q for name in ["faten", "aish", "poc"])
+    return "general"
 
 # ===============================
-# CLEAN QUERY
+# QUERY CLEANING
 # ===============================
-def clean_query(q):
+def clean_query(q: str) -> str:
     q = re.sub(r"\blunch\b", "launch", q, flags=re.I)
     q = re.sub(r"\bcampains\b", "campaigns", q, flags=re.I)
     return q.strip()
@@ -149,7 +153,7 @@ def role_answer(q, docs):
     text = " ".join(d.page_content for d in docs).lower()
     lines = []
     for s in text.split("."):
-        if any(k in s for k in ["sub-editor", "content team", "responsible", "writer", "editor"]):
+        if any(k in s for k in ["sub-editor", "content team", "responsible", "writer", "editor", "qa"]):
             lines.append(s.strip())
     if lines:
         return " ".join(lines[:2]).capitalize()
@@ -157,7 +161,6 @@ def role_answer(q, docs):
 
 def person_answer(q, docs):
     text = " ".join(d.page_content for d in docs).lower()
-
     role = ""
     duties = []
 
@@ -172,8 +175,36 @@ def person_answer(q, docs):
 
     return "I couldn’t find a clear role description for this person."
 
+def process_answer(q, docs):
+    text = " ".join(d.page_content for d in docs)
+
+    steps = []
+    for s in re.split(r"\n|\.", text):
+        if any(k in s.lower() for k in [
+            "submit",
+            "request",
+            "review",
+            "verify",
+            "update",
+            "operations",
+            "qa",
+            "channel"
+        ]):
+            steps.append(s.strip())
+
+    if not steps:
+        return "The SOP does not clearly outline a step-by-step process for this task."
+
+    steps = steps[:6]
+
+    answer = "To complete this process:\n"
+    for i, step in enumerate(steps, 1):
+        answer += f"{i}) {step}\n"
+
+    return answer.strip()
+
 # ===============================
-# UI — INPUT + BUTTONS (UNDER INPUT)
+# UI — INPUT + BUTTONS
 # ===============================
 st.subheader("Ask your internal question")
 
@@ -192,26 +223,33 @@ if clear:
 
 if ask:
     q_clean = clean_query(q)
+    intent = get_intent(q_clean)
 
     topic = st.session_state.topic[tool_mode]
     search_q = f"{topic}. {q_clean}" if topic else q_clean
 
-    docs = index.similarity_search(search_q, k=4)
+    docs = index.similarity_search(search_q, k=6)
 
-    if is_person(q_clean):
+    if intent == "process":
+        ans = process_answer(q_clean, docs)
+
+    elif intent == "person":
         ans = person_answer(q_clean, docs)
 
-    elif is_who(q_clean):
+    elif intent == "role":
         ans = role_answer(q_clean, docs)
 
-    elif is_definition(q_clean):
+    elif intent == "definition":
         ans = definition_answer(q_clean, docs)
         st.session_state.topic[tool_mode] = q_clean
 
     else:
         ans = definition_answer(q_clean, docs)
 
-    st.session_state.chat[tool_mode].append({"q": q_clean, "a": ans})
+    st.session_state.chat[tool_mode].append({
+        "q": q_clean,
+        "a": ans
+    })
 
 # ===============================
 # CHAT HISTORY
