@@ -1,0 +1,47 @@
+﻿Bayut 
+Product Content POC  
+The purpose of this SOP is to define the role, responsibilities, and workflows for the Product Point of Contact (POC) for the Arabic Content Team.
+Purpose
+This process ensures effective communication between the Product and Arabic Content teams, facilitates smooth implementation of new features, and supports product-related operations for Arabic content across platforms.
+Responsibilities
+* Act as the main communication bridge between the Product and Arabic Content teams
+* Discuss the details of new features with the Product team before and after launch
+* Test new features post-launch to ensure proper functionality and support for Arabic content workflows
+* Share product updates, launches, and enhancements with the Arabic Content team promptly
+* Support the team with Strapi technical issues and queries
+* Prepare and share product monitoring reports that highlight key updates, system performance, and areas for improvement
+* Collaborate with the Product team to ensure product features are optimised for Arabic content
+POCs
+* Content Marketing Team:
+   * POC: [Abdallah Al-bdareen]
+   * Final Approval & Oversight: [Sarah Alnawah]
+* Product Team:
+   * POC: [Anushae Jan]
+Step-by-Step Workflow
+Step 1: Features Discussion and Planning
+Coordinate with the Product team, in meetings or via group discussions, to review upcoming features, objectives, and their impact on content workflows.
+Step 2: Features Testing and Validation
+* Test all new features post-launch to verify overall functionality
+* Confirm that all text elements, buttons, and system messages display correctly across layouts
+* Verify the accuracy of Arabic translations in all feature-related texts
+* Report findings and raise any detected issues to the Product team for resolution
+* Conduct follow-up testing after fixes or updates to confirm full resolution
+Step 3: Product Updates Communication
+* Act as the first point of contact for team queries regarding product functionality and Strapi usage
+* Provide direct support to the Arabic team for any technical or workflow issues
+* Receive and review all product-related announcements from the Product team
+* Share detailed updates on product updates, bug fixes, or new features with the Arabic team
+* Keep a record of all new features, updates, and feedback for future reference
+Frequency 
+* Feature review and planning: Bi-weekly or per release cycle
+* Testing and validation: After each feature launch
+* Team support: Ongoing, as needed
+* Product updates communication: As updates, launches, or enhancements occur.
+Monitoring & Performance Analysis
+* Track system performance and product impact on content operations using Looker Studio dashboards
+* Collect feedback from the Arabic team to identify recurring issues or improvement areas
+* Prepare periodic reports highlighting key updates, system performance, and suggested optimizations
+References
+* Slack channels: 
+   * #bayut-product-content
+   * #strapi-content-tech

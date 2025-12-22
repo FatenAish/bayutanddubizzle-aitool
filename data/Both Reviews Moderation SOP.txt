@@ -1,0 +1,84 @@
+﻿Bayut 
+Reviews Moderation  
+The purpose of this SOP is to establish a clear framework for handling the review moderation process, maintaining high standards of quality and reliability.
+Purpose
+Ensure that all submitted reviews are genuine, relevant, and compliant with the platform’s content and community guidelines. This process maintains the credibility, quality, and integrity of the reviews while fostering transparency and user trust.
+Responsibilities 
+* Content Marketing Team:
+   * Reviews all user-submitted reviews to ensure they meet moderation criteria
+   * Approves or rejects reviews based on language quality, relevance, and authenticity
+   * Tracks all submissions through the Moderation Dashboard
+   * Maintains records of approved and rejected reviews for reporting purposes
+   * Analyzes moderation performance data and prepares performance reports
+   * Escalates cases involving sensitive or inappropriate content to the POC or Final Approver
+   * Ensures consistent application of guidelines across all moderators
+* Product Team:
+   * Ensures the moderation platform and dashboard function smoothly and efficiently
+   * Implements technical updates and automation improvements to streamline workflow
+   * Supports the Content Team in troubleshooting dashboard or submission issues
+   * Monitors system performance and ensures data accuracy within the moderation dashboard
+POCs
+* Content Marketing Team:
+   * POC: [Abdallah Al-bdareen]
+   * Final Approval & Oversight: [Sarah Alnawah]
+* Product Team:
+   * POC: [Anushae Jan]
+RACI Matrix:
+Role
+	Responsible
+	Accountable
+	Consulted
+	Informed
+	Content Marketing Team
+	        ✔
+	✔
+	
+
+	
+
+	Product Team
+	        ✔
+	
+
+	        ✔
+	        ✔
+	POC (Abdallah)
+	        ✔
+	
+
+	
+
+	
+
+	Final Approver (Sarah)
+	
+
+	✔
+	
+
+	
+
+	Step-by-Step Workflow
+Step 1: Submission Review
+All user-submitted reviews are automatically recorded in the Moderation Dashboard, including the review’s target, article type, username, email, and submission date
+Step 2: Moderation Criteria
+Each review must be checked for:
+* Relevance: Review must directly relate to the guide or topic
+* Language Quality: Clear, respectful, and free of offensive terms
+* Authenticity: Avoid fake, spam, or promotional content
+* Duplication: Duplicate submissions must be rejected
+Step 3: Publishing
+* Reviews that meet all guidelines are approved and automatically published to the live platform
+* Reviews that do not meet the criteria are rejected and archived for internal records
+Frequency
+* Daily: Review and moderate new submissions
+* Monthly: Compile and share performance reports
+* As needed: Address system errors or implement workflow improvements
+Monitoring & Performance Analysis
+To maintain consistency and high-quality standards, the moderation process is continuously monitored through defined performance indicators.
+* The Content Marketing Team reviews moderation activity daily to ensure accuracy and fairness
+* The Product Team monitors dashboard stability and data accuracy, addressing any technical issues as they arise
+* A monthly performance summary highlighting the Number of reviews received, approved, and rejected
+References
+* Tool: Reviews Moderation Dashboard
+* Guidelines: Review Moderation Guidelines.docx
