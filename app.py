@@ -10,7 +10,7 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 # PAGE CONFIG
 # ===============================
 st.set_page_config(
-    page_title="Bayut & dubizzle AI Assistant",
+    page_title="Bayut & dubizzle Internal Assistant",
     layout="wide"
 )
 
@@ -55,7 +55,7 @@ st.markdown(
 )
 
 # ===============================
-# LOAD QA FILES ONLY
+# QA FILE SELECTION
 # ===============================
 def get_qa_files(mode):
     files = []
@@ -86,7 +86,7 @@ def load_index(mode):
         docs.extend(TextLoader(f, encoding="utf-8").load())
 
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=800,
+        chunk_size=900,
         chunk_overlap=100
     )
     chunks = splitter.split_documents(docs)
@@ -98,34 +98,71 @@ def load_index(mode):
     return FAISS.from_documents(chunks, embeddings)
 
 # ===============================
-# ANSWERING LOGIC (NO AI)
+# STRICT ANSWER EXTRACTION (CRITICAL FIX)
 # ===============================
-def clean_answer(text):
-    text = re.sub(r"^Q:\s*", "", text, flags=re.I)
-    text = re.sub(r"^A:\s*", "", text, flags=re.I)
-    return text.strip()
-
-def thinking_answer(question, docs, history):
-    # Prefer answers that match follow-up context
+def extract_answer_only(question, docs):
     q_words = set(re.findall(r"\w+", question.lower()))
-    scored = []
+
+    best_score = 0
+    best_answer = None
 
     for d in docs:
-        a = d.page_content
-        a_words = set(re.findall(r"\w+", a.lower()))
-        score = len(q_words & a_words)
+        text = d.page_content
 
-        # boost if related to previous question
-        if history:
-            prev_words = set(
-                re.findall(r"\w+", history[-1]["q"].lower())
-            )
-            score += len(prev_words & a_words)
+        # Split file into Q&A blocks
+        blocks = re.split(r"\nQ:\s*", text)
+        for block in blocks:
+            if "\nA:" not in block:
+                continue
 
-        scored.append((score, a))
+            q_part, a_part = block.split("\nA:", 1)
 
-    scored.sort(reverse=True)
-    return clean_answer(scored[0][1]) if scored else "No relevant answer found."
+            q_text = q_part.strip().lower()
+            a_text = a_part.strip()
+
+            # Remove anything after next Q:
+            a_text = re.split(r"\nQ:\s*", a_text)[0].strip()
+
+            score = len(q_words & set(re.findall(r"\w+", q_text)))
+            if score > best_score:
+                best_score = score
+                best_answer = a_text
+
+    return best_answer or "I couldn’t find a clear answer to that."
+
+# ===============================
+# THINKING MODE (CHAT-AWARE, STILL STRICT)
+# ===============================
+def thinking_answer(question, docs, history):
+    q_words = set(re.findall(r"\w+", question.lower()))
+    prev_words = set()
+
+    if history:
+        prev_words = set(re.findall(r"\w+", history[-1]["q"].lower()))
+
+    best_score = 0
+    best_answer = None
+
+    for d in docs:
+        text = d.page_content
+        blocks = re.split(r"\nQ:\s*", text)
+
+        for block in blocks:
+            if "\nA:" not in block:
+                continue
+
+            q_part, a_part = block.split("\nA:", 1)
+            q_text = q_part.lower()
+            a_text = re.split(r"\nQ:\s*", a_part)[0].strip()
+
+            score = len(q_words & set(re.findall(r"\w+", q_text)))
+            score += len(prev_words & set(re.findall(r"\w+", q_text)))
+
+            if score > best_score:
+                best_score = score
+                best_answer = a_text
+
+    return best_answer or "I couldn’t find a clear answer to that."
 
 # ===============================
 # UI – QUESTION
@@ -139,7 +176,7 @@ with st.form("ask_form", clear_on_submit=True):
     clear = col2.form_submit_button("Clear chat")
 
 # ===============================
-# CLEAR CHAT (PER TOOL)
+# CLEAR CHAT
 # ===============================
 if clear:
     st.session_state.chat[tool_mode] = []
@@ -157,7 +194,7 @@ if ask and q.strip():
     docs = index.similarity_search(q, k=5)
 
     if answer_mode == "Ultra-Fast":
-        answer = clean_answer(docs[0].page_content)
+        answer = extract_answer_only(q, docs)
     else:
         answer = thinking_answer(q, docs, st.session_state.chat[tool_mode])
 
