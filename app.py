@@ -25,20 +25,21 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 INDEX_PATH = "/tmp/faiss_index"
 
 # ===============================
-# SESSION STATE
+# SESSION STATE (CHATGPT-STYLE MEMORY)
 # ===============================
-st.session_state.setdefault("last_q", "")
-st.session_state.setdefault("last_a", "")
+st.session_state.setdefault("chat", [])     # full chat
+st.session_state.setdefault("topic", "")    # running topic
 
 # ===============================
 # SIDEBAR
 # ===============================
 with st.sidebar:
-    st.header("Select an option")
-    tool_mode = st.radio("", ["General", "Bayut", "Dubizzle"], index=0)
-
-    st.markdown(" ")
-    answer_mode = st.radio("Answer mode", ["Short", "Detailed"], index=0)
+    st.header("Answer mode")
+    answer_mode = st.radio(
+        "",
+        ["Ultra-Fast", "Thinking"],
+        index=0
+    )
 
     st.markdown(" ")
     if st.button("Rebuild Index"):
@@ -63,7 +64,7 @@ st.markdown(
 )
 
 # ===============================
-# EMBEDDINGS (LOCAL — NO RATE LIMIT)
+# EMBEDDINGS (LOCAL, FAST, STABLE)
 # ===============================
 @st.cache_resource
 def get_embeddings():
@@ -72,7 +73,7 @@ def get_embeddings():
     )
 
 # ===============================
-# LLM
+# LLM (REASONING ONLY)
 # ===============================
 @st.cache_resource
 def get_llm():
@@ -82,10 +83,10 @@ def get_llm():
     )
 
 # ===============================
-# BUILD / LOAD INDEX
+# LOAD / BUILD INDEX (ONCE)
 # ===============================
 @st.cache_resource
-def load_index_once():
+def load_index():
     embeddings = get_embeddings()
 
     if os.path.exists(INDEX_PATH):
@@ -102,13 +103,9 @@ def load_index_once():
                 TextLoader(os.path.join(DATA_DIR, f), encoding="utf-8").load()
             )
 
-    if not docs:
-        st.error("No .txt files found in /data")
-        st.stop()
-
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1200,
-        chunk_overlap=150
+        chunk_size=1000,
+        chunk_overlap=120
     )
     chunks = splitter.split_documents(docs)
 
@@ -116,130 +113,133 @@ def load_index_once():
     index.save_local(INDEX_PATH)
     return index
 
-index = load_index_once()
+index = load_index()
 
 # ===============================
-# QUESTION INTENT DETECTION
+# HELPERS
 # ===============================
-def is_definition_question(q: str) -> bool:
-    q = q.lower().strip()
-    return q.startswith("what is") or q.startswith("what are") or q.startswith("define")
+def clean_query(q: str) -> str:
+    q = re.sub(r"\blunch\b", "launch", q, flags=re.IGNORECASE)
+    q = re.sub(r"\bcampains\b", "campaigns", q, flags=re.IGNORECASE)
+    q = re.sub(r"\bpm\b", "paid marketing", q, flags=re.IGNORECASE)
+    return q.strip()
 
-def wants_process(q: str) -> bool:
-    q = q.lower()
-    keywords = ["how", "steps", "process", "workflow", "sop", "procedure"]
-    return any(k in q for k in keywords)
-
-def is_greeting(q: str) -> bool:
+def is_greeting(q: str):
     return q.lower() in {"hi", "hello", "hey", "مرحبا", "اهلا"}
 
-def is_app_question(q: str) -> bool:
+def is_app_question(q: str):
     return "what is this app" in q.lower() or "what does this app do" in q.lower()
 
 # ===============================
-# PROMPT BUILDER (THE FIX)
+# 🔑 CHATGPT-STYLE TOPIC MANAGER (THE FIX)
 # ===============================
-def build_prompt(question: str, context: str, mode: str) -> str:
-    if is_definition_question(question) and not wants_process(question):
-        return f"""
-You are an internal assistant.
+def update_topic(current_topic: str, question: str) -> str:
+    q = question.lower().strip()
 
-Give a CLEAR, SHORT definition in 1–3 sentences.
-Do NOT list steps.
-Do NOT describe workflows.
-Do NOT mention tools unless necessary.
+    # new topic introducers → reset topic
+    if q.startswith(("what is", "what are", "define", "explain")):
+        return question
+
+    # otherwise keep topic
+    return current_topic or question
+
+def resolve_query(topic: str, question: str) -> str:
+    if topic:
+        return f"{topic}. Follow-up question: {question}"
+    return question
+
+# ===============================
+# ULTRA-FAST (NO LLM)
+# ===============================
+def ultra_fast_answer(q, docs):
+    text = " ".join(d.page_content for d in docs)
+    sentences = re.split(r"(?<=[.!?])\s+", text)
+
+    q_words = set(re.findall(r"\w+", q.lower()))
+    ranked = sorted(
+        sentences,
+        key=lambda s: len(q_words & set(re.findall(r"\w+", s.lower()))),
+        reverse=True
+    )
+
+    return " ".join(ranked[:2]).strip() or "I couldn’t find a clear answer."
+
+# ===============================
+# THINKING (REASONING, NOT CHATGPT TONE)
+# ===============================
+def thinking_answer(q, docs):
+    llm = get_llm()
+
+    context = "\n\n".join(d.page_content for d in docs)[:2000]
+
+    prompt = f"""
+Answer clearly and directly.
+Stay on the current topic.
+Explain first; expand only if needed.
+Do NOT dump SOPs unless asked.
 
 Context:
 {context}
 
 Question:
-{question}
+{q}
+
+Answer:
 """
-
-    if mode == "Short":
-        return f"""
-Answer briefly and clearly.
-Summarize in plain language.
-Avoid SOP-style details unless explicitly requested.
-
-Context:
-{context}
-
-Question:
-{question}
-"""
-
-    # Detailed
-    return f"""
-You are an internal SOP assistant.
-
-Explain clearly and in a structured way.
-Include steps only if relevant.
-Be practical, not verbose.
-
-Context:
-{context}
-
-Question:
-{question}
-"""
-
-# ===============================
-# ANSWERING
-# ===============================
-def answer_question(q: str, docs, mode: str):
-    context = "\n\n".join(d.page_content for d in docs)[:3000]
-    prompt = build_prompt(q, context, mode)
-    return get_llm().invoke(prompt).content.strip()
+    return llm.invoke(prompt).content.strip()
 
 # ===============================
 # UI
 # ===============================
 st.subheader("Ask your internal question")
 
-with st.form("ask", clear_on_submit=True):
-    q = st.text_input("Question")
-    ask = st.form_submit_button("Ask")
-    clear = st.form_submit_button("Clear")
+q = st.text_input("Question")
 
-if clear:
-    st.session_state.last_q = ""
-    st.session_state.last_a = ""
-    st.rerun()
-
-if ask:
-    q_clean = q.strip()
+if st.button("Ask"):
+    q_clean = clean_query(q)
 
     if not q_clean:
         st.warning("Enter a question.")
         st.stop()
 
     if is_greeting(q_clean):
-        st.session_state.last_q = q_clean
-        st.session_state.last_a = "Hello 👋 How can I help you?"
-        st.rerun()
-
-    if is_app_question(q_clean):
-        st.session_state.last_q = q_clean
-        st.session_state.last_a = (
-            "This is an internal AI assistant for Bayut & Dubizzle. "
-            "It answers questions based on internal SOPs and guidelines."
+        ans = "Hello 👋 How can I help you?"
+    elif is_app_question(q_clean):
+        ans = (
+            "This is an internal assistant for Bayut & Dubizzle. "
+            "It answers questions based on internal content and SOPs."
         )
-        st.rerun()
+    else:
+        # 🔑 CHATGPT-STYLE CONTEXT RESOLUTION
+        resolved_query = resolve_query(
+            st.session_state.topic,
+            q_clean
+        )
 
-    docs = index.similarity_search(q_clean, k=4)
-    ans = answer_question(q_clean, docs, answer_mode)
+        docs = index.similarity_search(resolved_query, k=3)
 
-    st.session_state.last_q = q_clean
-    st.session_state.last_a = ans
-    st.rerun()
+        if answer_mode == "Ultra-Fast":
+            ans = ultra_fast_answer(q_clean, docs)
+        else:
+            ans = thinking_answer(q_clean, docs)
 
-if st.session_state.last_q:
+        # update topic AFTER answering
+        st.session_state.topic = update_topic(
+            st.session_state.topic,
+            q_clean
+        )
+
+    st.session_state.chat.append({"q": q_clean, "a": ans})
+
+# ===============================
+# DISPLAY CHAT HISTORY
+# ===============================
+for item in st.session_state.chat:
     st.markdown(
         f"""
-        <div style="border:1px solid #ddd;padding:16px;border-radius:8px;">
-          <b>{st.session_state.last_q}</b><br><br>
-          {st.session_state.last_a}
+        <div style="border:1px solid #ddd;padding:12px;border-radius:8px;margin-bottom:8px;">
+          <b>{item['q']}</b><br>
+          {item['a']}
         </div>
         """,
         unsafe_allow_html=True
