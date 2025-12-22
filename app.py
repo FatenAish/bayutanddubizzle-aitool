@@ -149,7 +149,10 @@ def build_index():
         raise RuntimeError("❌ /data folder not found")
 
     docs = []
-    splitter = RecursiveCharacterTextSplitter(chunk_size=900, chunk_overlap=150)
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=900,
+        chunk_overlap=150
+    )
 
     for file in os.listdir(DATA_DIR):
         if not file.lower().endswith(".txt"):
@@ -157,10 +160,12 @@ def build_index():
 
         raw = read_text(os.path.join(DATA_DIR, file))
         for chunk in splitter.split_text(raw):
-            docs.append(Document(
-                page_content=chunk,
-                metadata={"source": file}
-            ))
+            docs.append(
+                Document(
+                    page_content=chunk,
+                    metadata={"source": file}
+                )
+            )
 
     if not docs:
         raise RuntimeError("❌ No readable .txt files found")
