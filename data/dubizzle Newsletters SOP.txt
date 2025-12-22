@@ -1,0 +1,103 @@
+﻿dubizzle
+Newsletters
+  
+
+
+
+The purpose of this SOP is to define a clear and consistent process for creating and sending weekly newsletters for both Property and Cars categories. This SOP ensures operational efficiency, editorial consistency, and alignment with the overall content and marketing strategy across both categories.
+Purpose 
+Dubizzle’s weekly newsletters aim to deliver relevant content to users, including featured blog posts, listings, and promotional highlights in order to:
+* Increase user engagement
+* Drive qualified traffic to the platform
+* Nurture leads and support retention
+* Enhance brand visibility and content discoverability
+Responsibilities:
+* Content Marketing Team:
+   * Prepares a monthly content calendar for both Property and Cars newsletters
+   * Selects relevant topics and articles to be featured
+   * Writes customised content tailored to each newsletter’s audience and brand tone
+   * Conducts internal testing before sending (links, layout, visuals, and user experience)
+   * Ensures content accuracy, relevance, and alignment with overall communication goals
+* Performance Marketing Team:
+   * Handles the technical setup and implementation of the newsletter
+   * Monitors performance and delivery to ensure campaigns run smoothly and achieve optimal results
+POCs
+* Content Marketing Team
+   * EN POCs: Quratulain Khan 
+      * Property: Aruba Yousuf
+      * Cars: Salman Ahmed Siddiqui
+   * AR POCs: Odai Quraan 
+      * Property: Saif Al Tarawneh
+      * Cars: Hala Al- Salaheen
+   * Final Content Approval: Sarah Alnawah 
+* Performance Marketing Team
+   * CLM:Ghaith Ksebi
+Step-by-Step Workflow
+Step 1: Monthly Content Calendar
+* Prepare the monthly newsletter calendar by the 14th of every month.
+* The calendar must include newsletter topics, featured articles, and links.
+* Submit your work for review and approval by Sarah before proceeding to content creation.
+Step 2: Content Creation
+* Prepare newsletter content on a weekly basis, based on the approved calendar.
+Step 3: Visuals/Design Requests
+* Submit visuals request to the Design Team after the monthly calendar is approved.
+* Images must follow dubizzle branding guidelines and match the newsletter layout.
+* The writer is responsible for ensuring that all required visuals are submitted on time.
+Step 4: Content Submission on Airtable
+* Upload the final newsletter copy, media and links to the Airtable – Newsletter Section.
+* Update the Status to "Ready for Editing".
+* The newsletter is automatically assigned to editors for review.
+Step 5: Language Review & Status Update
+The assigned Content Leads review content quality:
+   * Arabic newsletters: reviewed by Odai Quraan
+   * English newsletters: reviewed by Quratulain Khan
+
+   * After edits and approval, the Editors change the Status in Airtable to "Ready for Testing".
+Step 6: Internal Testing
+   * Once marked as "Ready for Testing", the newsletter is shared automatically with the team via the #dbz-newsletters Slack group.
+   * A test send is triggered on MoEngage for internal review.
+   * All stakeholders (writers, editors, and POCs) must review:
+   * Layout & formatting
+   * Links and buttons functionality
+   * Visual display and mobile view
+   * Correct blog/article links
+Step 7: Final Approval & Distribution 
+   * After the test version is approved by the content team, it is submitted to Sarah Alnawahfor final approval.
+   * After approval, the newsletter is scheduled by the Performance Marketing Team for distribution to the audience.
+Frequency & Schedule
+Category
+	Test Schedule
+	Roll-out Schedule
+	Cars Newsletter
+	Every Monday
+	Every Tuesday
+	Property Newsletter
+	Every Tuesday
+	Every Wednesday
+	Monitoring & Performance Analysis
+   * Newsletter performance is tracked using MoEngage analytics.
+   * Performance is reviewed 5 days after sending to evaluate engagement and delivery quality.
+   * The results will be reflected in the Newsletter Report dashboard.
+Weekly Report
+  
+  
+
+A weekly performance review must include:
+   * Emails Sent
+   * Open Rate
+   * Clicks
+   * CTR
+   * Unsubscribes
+   * Total Clicks
+   * Traffic to Website
+   * Traffic to SM
+   * Traffic to Apps
+   * Traffic to G Review
+References
+   * Cars Calendar Sheet + Property Calendar Sheet
+   * Airtable – Newsletter Section
+   * Newsletter Report dashboard
+By following this SOP, all teams ensure a smooth and organised newsletter production cycle that supports quality communication, cross-team coordination, and continuous performance optimisation. 
+
+
+Any suggestions for improvement or adjustments to this process should be communicated to the Content Marketing Manager for review and potential implementation in future updates.
