@@ -23,9 +23,21 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-      div[data-testid="stHorizontalBlock"] { gap: 0.14rem; }   /* less space between buttons */
+      div[data-testid="stHorizontalBlock"] { gap: 0.12rem; }  /* less space between buttons */
       button { white-space: nowrap !important; }
-      .ask-label { font-weight: 800; margin-bottom: 6px; }
+
+      /* Make the input area look cleaner */
+      [data-testid="stForm"] {
+        border: 1px solid #E7E9EE;
+        border-radius: 12px;
+        padding: 16px 16px 10px 16px;
+        background: #fff;
+      }
+      /* reduce extra spacing above input */
+      div[data-testid="stTextInput"] > label { display:none; }
+
+      /* slightly nicer separator */
+      hr { margin: 14px 0; }
     </style>
     """,
     unsafe_allow_html=True
@@ -38,18 +50,24 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 
 # ===============================
-# SESSION STATE
+# SESSION STATE (ROBUST + MIGRATE OLD KEYS)
 # ===============================
-st.session_state.setdefault("chat", {
-    "General": [],
-    "Bayut": [],
-    "Dubizzle": []
-})
+if "chat" not in st.session_state or not isinstance(st.session_state.chat, dict):
+    st.session_state.chat = {}
+
+# migrate legacy key: "dubizzle" -> "Dubizzle"
+if "dubizzle" in st.session_state.chat and "Dubizzle" not in st.session_state.chat:
+    st.session_state.chat["Dubizzle"] = st.session_state.chat.pop("dubizzle")
+
+# ensure required keys exist
+st.session_state.chat.setdefault("General", [])
+st.session_state.chat.setdefault("Bayut", [])
+st.session_state.chat.setdefault("Dubizzle", [])
 
 # ===============================
 # CONSTANTS
 # ===============================
-THINKING_DELAY_SECONDS = 1.2  # increase if you want slower Thinking mode
+THINKING_DELAY_SECONDS = 1.2  # make Thinking mode slower (increase if you want)
 
 # ===============================
 # HELPERS
@@ -84,9 +102,11 @@ def clean_answer(text: str) -> str:
 
     text = re.sub(r"", "", text, flags=re.DOTALL)
     text = re.sub(r"", "", text, flags=re.DOTALL)
+
     text = re.sub(r"turn\d+file\d+", "", text, flags=re.IGNORECASE)
     text = re.sub(r"turn\d+file\d+", "", text, flags=re.IGNORECASE)
     text = re.sub(r"[^A-Za-z0-9]*filecite[^A-Za-z0-9]*", "", text, flags=re.IGNORECASE)
+
     text = re.sub(r"\bQ:\s*", "", text)
     text = re.sub(r"\bA:\s*", "", text)
     text = re.sub(r"\bQ\d+\)\s*", "", text, flags=re.IGNORECASE)
@@ -216,7 +236,7 @@ def mode_allows_file(mode: str, filename_lower: str) -> bool:
         return True
 
     is_bayut = filename_lower.startswith("bayut")
-    is_dubizzle = filename_lower.startswith("dubizzle") or filename_lower.startswith("dubizzle")
+    is_dubizzle = filename_lower.startswith("dubizzle")
     is_both = filename_lower.startswith("both")
     is_general = filename_lower.startswith("general")
 
@@ -354,14 +374,12 @@ def answer_from_qa(question: str, qa_index, answer_mode: str, history,
     for d in results:
         src = (d.metadata or {}).get("source_file", "")
 
-        # APP scope: only app/assistant files
         if app_scope:
             if is_marketing_file(src):
                 continue
             if not is_app_file(src):
                 continue
 
-        # Listings scope: only listings/corrections files
         if listings_scope:
             if is_marketing_file(src):
                 continue
@@ -396,26 +414,18 @@ def answer_from_sop_fallback(question: str, sop_index):
     return None
 
 def enhance_for_thinking(answer: str) -> str:
-    """More detailed, but still natural. No bullets unless needed."""
     a = clean_answer(answer)
     if not a:
         return a
-
-    # If already long, keep it as is
     if len(a.split()) >= 60:
         return a
-
-    # Expand short answers in a natural way
     return (
         f"{a}\n\n"
-        "If you want more detail, ask:\n"
-        "- “step-by-step”\n"
-        "- “give me the checklist”\n"
-        "- “who are the POCs?”"
+        "If you want more detail, ask: “step-by-step” or “give me the checklist”."
     )
 
 def smart_answer(question: str, qa_index, sop_index, answer_mode: str, history):
-    # Hard override: app ownership ALWAYS correct
+    # hard override
     if is_app_owner_question(question):
         return "Faten Aish and Sarah Al Nawah."
 
@@ -437,7 +447,6 @@ def smart_answer(question: str, qa_index, sop_index, answer_mode: str, history):
             return b
         return "I couldn’t find a clear answer to that."
 
-    # App/tool general (not owner)
     if any(w in question.lower() for w in ["assistant", "tool", "app"]):
         a = answer_from_qa(question, qa_index, answer_mode, history, force_app_filter=True)
         if a:
@@ -462,6 +471,10 @@ with st.sidebar:
     st.markdown("---")
     answer_mode = st.radio("Answer mode", ["Ultra-Fast", "Thinking"], index=0)
 
+# Always use safe chat key
+chat_key = tool_mode
+st.session_state.chat.setdefault(chat_key, [])
+
 # ===============================
 # TITLE
 # ===============================
@@ -478,7 +491,7 @@ st.markdown(
 )
 
 # ===============================
-# TOOL HEADING (Bayut green / Dubizzle red)
+# TOOL HEADING (colored brand word)
 # ===============================
 if tool_mode == "Bayut":
     st.markdown(
@@ -494,11 +507,9 @@ else:
     st.markdown('<h2 style="margin-top:6px;">General Assistant</h2>', unsafe_allow_html=True)
 
 # ===============================
-# QUESTION UI
+# QUESTION UI (NO "Ask me Anything!")
 # ===============================
 with st.form("ask_form", clear_on_submit=True):
-    # Ask me Anything! lower
-    st.markdown('<div class="ask-label" style="margin-top:14px;">Ask me Anything!</div>', unsafe_allow_html=True)
     q = st.text_input("", placeholder="Type your question here...")
 
     left, mid, right = st.columns([4, 2.3, 4])
@@ -511,39 +522,60 @@ with st.form("ask_form", clear_on_submit=True):
 # CLEAR CHAT
 # ===============================
 if clear:
-    st.session_state.chat[tool_mode] = []
+    st.session_state.chat[chat_key] = []
     st.rerun()
 
 # ===============================
 # HANDLE QUESTION
 # ===============================
 if ask and q.strip():
-    if is_download_sop_request(q):
-        files = pick_sop_files_for_download(tool_mode, q)
-        if not files:
-            st.session_state.chat[tool_mode].append({"q": q, "a": "No SOP files found to download.", "downloads": []})
-        else:
-            st.session_state.chat[tool_mode].append({"q": q, "a": "Here are the SOP files you can download:", "downloads": files})
-        st.rerun()
+    history = st.session_state.chat.get(chat_key, [])
 
-    qa_index = load_qa_index(tool_mode)
-    sop_index = load_sop_index(tool_mode)
-
-    history = st.session_state.chat[tool_mode]
-    answer = smart_answer(q, qa_index, sop_index, answer_mode, history)
-
+    # Thinking spinner like ChatGPT
     if answer_mode == "Thinking":
-        time.sleep(THINKING_DELAY_SECONDS)
-        answer = enhance_for_thinking(answer)
+        with st.spinner("Thinking..."):
+            if is_download_sop_request(q):
+                files = pick_sop_files_for_download(chat_key, q)
+                if not files:
+                    st.session_state.chat[chat_key].append({"q": q, "a": "No SOP files found to download.", "downloads": []})
+                else:
+                    st.session_state.chat[chat_key].append({"q": q, "a": "Here are the SOP files you can download:", "downloads": files})
+                st.rerun()
 
-    st.session_state.chat[tool_mode].append({"q": q, "a": answer})
-    st.rerun()
+            qa_index = load_qa_index(chat_key)
+            sop_index = load_sop_index(chat_key)
+
+            answer = smart_answer(q, qa_index, sop_index, answer_mode, history)
+
+            time.sleep(THINKING_DELAY_SECONDS)
+            answer = enhance_for_thinking(answer)
+
+            st.session_state.chat[chat_key].append({"q": q, "a": answer})
+            st.rerun()
+
+    # Ultra-fast (no spinner)
+    else:
+        if is_download_sop_request(q):
+            files = pick_sop_files_for_download(chat_key, q)
+            if not files:
+                st.session_state.chat[chat_key].append({"q": q, "a": "No SOP files found to download.", "downloads": []})
+            else:
+                st.session_state.chat[chat_key].append({"q": q, "a": "Here are the SOP files you can download:", "downloads": files})
+            st.rerun()
+
+        qa_index = load_qa_index(chat_key)
+        sop_index = load_sop_index(chat_key)
+
+        answer = smart_answer(q, qa_index, sop_index, answer_mode, history)
+
+        st.session_state.chat[chat_key].append({"q": q, "a": answer})
+        st.rerun()
 
 # ===============================
 # CHAT HISTORY (NEWEST ON TOP)
 # ===============================
-style = bubble_style(tool_mode)
-items = list(enumerate(st.session_state.chat[tool_mode]))[::-1]
+style = bubble_style(chat_key)
+items = list(enumerate(st.session_state.chat.get(chat_key, [])))[::-1]
 
 for orig_idx, item in items:
     q_txt = html.escape(item.get("q", ""))
@@ -574,7 +606,7 @@ for orig_idx, item in items:
                         data=f.read(),
                         file_name=os.path.basename(fp),
                         mime="text/plain",
-                        key=f"dl_{tool_mode}_{orig_idx}_{i}_{os.path.basename(fp)}"
+                        key=f"dl_{chat_key}_{orig_idx}_{i}_{os.path.basename(fp)}"
                     )
 
     st.markdown("---")
