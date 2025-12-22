@@ -1,6 +1,7 @@
 import os
 import re
 import streamlit as st
+
 from langchain_community.vectorstores import FAISS
 from langchain_community.document_loaders import TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -49,15 +50,28 @@ st.markdown(
       <span style="color:#D71920;">dubizzle</span>
       AI Content Assistant
     </h1>
-    <p style="text-align:center;color:#666;">Internal Q&A Assistant</p>
+    <p style="text-align:center;color:#666;">Internal AI Assistant</p>
     """,
     unsafe_allow_html=True
 )
 
 # ===============================
+# TOOL HEADING (MAIN)
+# ===============================
+if tool_mode == "Bayut":
+    st.subheader("Ask Bayut Anything")
+elif tool_mode == "dubizzle":
+    st.subheader("Ask dubizzle Anything")
+else:
+    st.subheader("General Assistant")
+
+# ===============================
 # QA FILE SELECTION
 # ===============================
-def get_qa_files(mode):
+def get_qa_files(mode: str):
+    if not os.path.isdir(DATA_DIR):
+        return []
+
     files = []
     for f in os.listdir(DATA_DIR):
         if not f.endswith("-QA.txt"):
@@ -76,7 +90,7 @@ def get_qa_files(mode):
 # BUILD INDEX (LOCAL)
 # ===============================
 @st.cache_resource
-def load_index(mode):
+def load_index(mode: str):
     qa_files = get_qa_files(mode)
     if not qa_files:
         return None
@@ -98,18 +112,32 @@ def load_index(mode):
     return FAISS.from_documents(chunks, embeddings)
 
 # ===============================
-# STRICT ANSWER EXTRACTION (CRITICAL FIX)
+# CLEAN ANSWER (REMOVE FILECITE)
+# ===============================
+def clean_answer(text: str) -> str:
+    if not text:
+        return ""
+
+    # Remove the exact marker
+    text = re.sub(r"", "", text)
+
+    # Extra safety: remove any leftover "filecite turnXfileY" fragments
+    text = re.sub(r"filecite\s*turn\d+file\d+", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"turn\d+file\d+", "", text, flags=re.IGNORECASE)
+
+    return text.strip()
+
+# ===============================
+# STRICT ANSWER EXTRACTION
 # ===============================
 def extract_answer_only(question, docs):
     q_words = set(re.findall(r"\w+", question.lower()))
-
     best_score = 0
     best_answer = None
 
     for d in docs:
         text = d.page_content
 
-        # Split file into Q&A blocks
         blocks = re.split(r"\nQ:\s*", text)
         for block in blocks:
             if "\nA:" not in block:
@@ -128,7 +156,7 @@ def extract_answer_only(question, docs):
                 best_score = score
                 best_answer = a_text
 
-    return best_answer or "I couldn’t find a clear answer to that."
+    return clean_answer(best_answer) if best_answer else "I couldn’t find a clear answer to that."
 
 # ===============================
 # THINKING MODE (CHAT-AWARE, STILL STRICT)
@@ -162,18 +190,49 @@ def thinking_answer(question, docs, history):
                 best_score = score
                 best_answer = a_text
 
-    return best_answer or "I couldn’t find a clear answer to that."
+    return clean_answer(best_answer) if best_answer else "I couldn’t find a clear answer to that."
+
+# ===============================
+# DOWNLOAD SOP INTENT
+# ===============================
+def is_download_sop_request(question: str) -> bool:
+    q = question.lower().strip()
+    return ("download" in q or "dl" in q or "get" in q) and ("sop" in q or "sops" in q)
+
+def pick_sop_files(mode: str, question: str):
+    files = get_qa_files(mode)
+    if not files:
+        return []
+
+    # Optional filtering by keywords in the question (after removing common words)
+    stop = {"download", "dl", "get", "sop", "sops", "please", "the", "a", "an", "for", "to", "of"}
+    tokens = [t for t in re.findall(r"[a-zA-Z0-9]+", question.lower()) if t not in stop]
+
+    if not tokens:
+        return files
+
+    scored = []
+    for fp in files:
+        name = os.path.basename(fp).lower()
+        score = sum(1 for t in tokens if t in name)
+        scored.append((score, fp))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    best_score = scored[0][0]
+    if best_score == 0:
+        return files  # no match → show all for that mode
+    return [fp for s, fp in scored if s == best_score]
 
 # ===============================
 # UI – QUESTION
 # ===============================
-st.subheader(f"{tool_mode} Assistant")
-
 with st.form("ask_form", clear_on_submit=True):
     q = st.text_input("Ask a question")
-    col1, col2 = st.columns([1, 1])
-    ask = col1.form_submit_button("Ask")
-    clear = col2.form_submit_button("Clear chat")
+
+    # Buttons beside each other on the LEFT under the box
+    b1, b2, _sp = st.columns([1, 1, 6])
+    ask = b1.form_submit_button("Ask")
+    clear = b2.form_submit_button("Clear chat")
 
 # ===============================
 # CLEAR CHAT
@@ -186,6 +245,19 @@ if clear:
 # HANDLE QUESTION
 # ===============================
 if ask and q.strip():
+    # If user requests SOP download in chat → show download buttons
+    if is_download_sop_request(q):
+        files = pick_sop_files(tool_mode, q)
+
+        if not files:
+            answer = "No SOP files found to download."
+            st.session_state.chat[tool_mode].append({"q": q, "a": answer, "downloads": []})
+        else:
+            answer = "Here are the SOP files you can download:"
+            st.session_state.chat[tool_mode].append({"q": q, "a": answer, "downloads": files})
+
+        st.rerun()
+
     index = load_index(tool_mode)
     if index is None:
         st.error("No Q&A files found.")
@@ -207,13 +279,41 @@ if ask and q.strip():
 # ===============================
 # CHAT HISTORY (PER TOOL)
 # ===============================
-for item in st.session_state.chat[tool_mode]:
+def bubble_style(mode: str) -> str:
+    if mode == "Bayut":
+        return "background:#EAF7F1;border:1px solid #BFE6D5;"  # light green
+    if mode == "dubizzle":
+        return "background:#FCEBEC;border:1px solid #F3C1C5;"  # light red
+    return "background:#F5F6F8;border:1px solid #E2E5EA;"      # neutral
+
+style = bubble_style(tool_mode)
+
+for idx, item in enumerate(st.session_state.chat[tool_mode]):
+    # Bubble
     st.markdown(
         f"""
-        <div style="border:1px solid #ddd;padding:12px;border-radius:8px;margin-bottom:10px;">
-        <b>Q:</b> {item['q']}<br><br>
-        <b>A:</b> {item['a']}
+        <div style="{style} padding:12px;border-radius:10px;margin-bottom:10px;">
+            <b>Q:</b> {item['q']}<br><br>
+            {item['a']}
         </div>
         """,
         unsafe_allow_html=True
     )
+
+    # Download buttons inside chat (only when requested)
+    downloads = item.get("downloads", [])
+    if downloads:
+        cols = st.columns(min(3, len(downloads)))
+        for i, fp in enumerate(downloads):
+            col = cols[i % len(cols)]
+            filename = os.path.basename(fp).replace("-QA.txt", "").replace("_", " ")
+
+            with col:
+                with open(fp, "rb") as f:
+                    st.download_button(
+                        label=f"Download {filename}",
+                        data=f.read(),
+                        file_name=os.path.basename(fp),
+                        mime="text/plain",
+                        key=f"dl_{tool_mode}_{idx}_{i}_{os.path.basename(fp)}"
+                    )
