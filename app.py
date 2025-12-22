@@ -11,7 +11,7 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 # PAGE CONFIG
 # ===============================
 st.set_page_config(
-    page_title="Bayut & dubizzle Internal Assistant",
+    page_title="Bayut & Dubizzle Internal Assistant",
     layout="wide"
 )
 
@@ -60,8 +60,8 @@ st.markdown(
 # ===============================
 if tool_mode == "Bayut":
     st.subheader("Ask Bayut Anything")
-elif tool_mode == "dubizzle":
-    st.subheader("Ask dubizzle Anything")
+elif tool_mode == "Dubizzle":
+    st.subheader("Ask Dubizzle Anything")
 else:
     st.subheader("General Assistant")
 
@@ -112,25 +112,31 @@ def load_index(mode: str):
     return FAISS.from_documents(chunks, embeddings)
 
 # ===============================
-# CLEAN ANSWER (REMOVE FILECITE - ROBUST)
+# CLEAN ANSWER (REMOVE FILECITE - VERY ROBUST)
 # ===============================
 def clean_answer(text: str) -> str:
     if not text:
         return ""
 
-    # remove private-use glyphs + replacement chars (often show as boxes)
+    # Remove private-use glyphs + replacement chars (often render as boxes)
     text = re.sub(r"[\uE000-\uF8FF\uFFFD]", "", text)
 
-    # remove any token that contains filecite (handles weird wrappers like �filecite�turn5file0�)
-    text = re.sub(r"\S*filecite\S*", " ", text, flags=re.IGNORECASE)
-
-    # remove any token that contains turnXfileY (extra safety)
-    text = re.sub(r"\S*turn\d+file\d+\S*", " ", text, flags=re.IGNORECASE)
-
-    # remove the exact marker too (in case it appears cleanly)
+    # Remove exact marker if present
     text = re.sub(r"", " ", text)
 
-    # normalize spaces
+    # Remove any remaining special glyphs used by citations
+    text = text.replace("", " ")
+
+    # Remove ANY occurrence of filecite even if wrapped with weird chars
+    text = re.sub(r"(?i)\S*filecite\S*", " ", text)
+
+    # Remove turnXfileY fragments (extra safety)
+    text = re.sub(r"(?i)\S*turn\d+file\d+\S*", " ", text)
+
+    # Also remove the word itself if it survived
+    text = re.sub(r"(?i)filecite", " ", text)
+
+    # Normalize spaces
     text = re.sub(r"\s+", " ", text).strip()
     return text
 
@@ -229,16 +235,16 @@ def pick_sop_files(mode: str, question: str):
 
 # ===============================
 # UI – QUESTION
+# Ask + Clear beside each other on the LEFT (tiny space)
+# Enter submits Ask ✅
 # ===============================
 with st.form("ask_form", clear_on_submit=True):
     q = st.text_input("Ask a question")
 
-    # Ask + Clear beside each other with tiny space
-    b1, b2 = st.columns(2, gap="small")
+    # 3 columns so buttons stay on the LEFT, not spread across the page
+    b1, b2, _sp = st.columns([1, 1, 8], gap="small")
     ask = b1.form_submit_button("Ask")
     clear = b2.form_submit_button("Clear chat")
-
-# Enter key will submit form -> triggers first submit button (Ask) ✅
 
 # ===============================
 # CLEAR CHAT
@@ -276,7 +282,7 @@ if ask and q.strip():
 
 # ===============================
 # CHAT HISTORY (NEWEST FIRST)
-# - bubble ONLY for question
+# - Question ONLY in colored bubble
 # ===============================
 def bubble_css(mode: str) -> str:
     if mode == "Bayut":
@@ -288,7 +294,6 @@ def bubble_css(mode: str) -> str:
 style = bubble_css(tool_mode)
 chat_list = st.session_state.chat[tool_mode]
 
-# render newest above oldest (reverse order) while keeping stable indices for download keys
 for i in range(len(chat_list) - 1, -1, -1):
     item = chat_list[i]
 
@@ -302,7 +307,7 @@ for i in range(len(chat_list) - 1, -1, -1):
         unsafe_allow_html=True
     )
 
-    # Answer plain text (no bubble, no "A:")
+    # Answer plain (already cleaned)
     st.markdown(item.get("a", ""))
 
     # Download buttons inside chat ONLY when user asked
