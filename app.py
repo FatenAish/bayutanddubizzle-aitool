@@ -1,18 +1,17 @@
 import os
 import re
-import unicodedata
 import streamlit as st
 
 from langchain_community.vectorstores import FAISS
 from langchain_community.document_loaders import TextLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_core.documents import Document
 
 # ===============================
 # PAGE CONFIG
 # ===============================
 st.set_page_config(
-    page_title="Bayut & Dubizzle Internal Assistant",
+    page_title="Bayut & dubizzle Internal Assistant",
     layout="wide"
 )
 
@@ -28,7 +27,7 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 st.session_state.setdefault("chat", {
     "General": [],
     "Bayut": [],
-    "Dubizzle": []
+    "dubizzle": []
 })
 
 # ===============================
@@ -36,7 +35,7 @@ st.session_state.setdefault("chat", {
 # ===============================
 with st.sidebar:
     st.header("Select tool")
-    tool_mode = st.radio("", ["General", "Bayut", "Dubizzle"], index=0)
+    tool_mode = st.radio("", ["General", "Bayut", "dubizzle"], index=0)
 
     st.markdown("---")
     answer_mode = st.radio("Answer mode", ["Ultra-Fast", "Thinking"], index=0)
@@ -48,7 +47,7 @@ st.markdown(
     """
     <h1 style="text-align:center;font-weight:800;">
       <span style="color:#0E8A6D;">Bayut</span> &
-      <span style="color:#D71920;">Dubizzle</span>
+      <span style="color:#D71920;">dubizzle</span>
       AI Content Assistant
     </h1>
     <p style="text-align:center;color:#666;">Internal AI Assistant</p>
@@ -57,195 +56,156 @@ st.markdown(
 )
 
 # ===============================
-# TOOL HEADING
+# TOOL HEADING (MAIN)
 # ===============================
 if tool_mode == "Bayut":
     st.subheader("Ask Bayut Anything")
-elif tool_mode == "Dubizzle":
-    st.subheader("Ask Dubizzle Anything")
+elif tool_mode == "dubizzle":
+    st.subheader("Ask dubizzle Anything")
 else:
     st.subheader("General Assistant")
 
 # ===============================
-# FILE HELPERS
+# QA FILE SELECTION
 # ===============================
-def list_all_txt_files():
+def get_qa_files(mode: str):
     if not os.path.isdir(DATA_DIR):
         return []
-    return [os.path.join(DATA_DIR, f) for f in os.listdir(DATA_DIR) if f.lower().endswith(".txt")]
 
-def get_qa_files(mode: str):
     files = []
-    for fp in list_all_txt_files():
-        f = os.path.basename(fp)
-        lf = f.lower()
-        if not lf.endswith("-qa.txt"):
+    for f in os.listdir(DATA_DIR):
+        if not f.endswith("-QA.txt"):
             continue
 
+        lf = f.lower()
         if mode == "Bayut" and not lf.startswith("bayut"):
             continue
-        if mode == "Dubizzle" and not lf.startswith("dubizzle"):
+        if mode == "dubizzle" and not lf.startswith("dubizzle"):
             continue
 
-        files.append(fp)
+        files.append(os.path.join(DATA_DIR, f))
     return files
 
 # ===============================
-# CLEAN ANSWER (filecite + spacing + formatting)
+# BUILD INDEX (LOCAL)
+# ===============================
+@st.cache_resource
+def load_index(mode: str):
+    qa_files = get_qa_files(mode)
+    if not qa_files:
+        return None
+
+    docs = []
+    for f in qa_files:
+        docs.extend(TextLoader(f, encoding="utf-8").load())
+
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=900,
+        chunk_overlap=100
+    )
+    chunks = splitter.split_documents(docs)
+
+    embeddings = HuggingFaceEmbeddings(
+        model_name="sentence-transformers/all-MiniLM-L6-v2"
+    )
+
+    return FAISS.from_documents(chunks, embeddings)
+
+# ===============================
+# CLEAN ANSWER (REMOVE FILECITE - ROBUST)
 # ===============================
 def clean_answer(text: str) -> str:
     if not text:
         return ""
 
-    # Normalize unicode (fixes invisible junk)
-    text = unicodedata.normalize("NFKC", text)
-
-    # Remove zero-width / directional chars
-    text = re.sub(r"[\u200B-\u200F\u202A-\u202E\u2060-\u206F]", "", text)
-
-    # Remove private-use + replacement chars (boxes)
+    # remove private-use glyphs + replacement chars (often show as boxes)
     text = re.sub(r"[\uE000-\uF8FF\uFFFD]", "", text)
 
-    # Remove exact marker
+    # remove any token that contains filecite (handles weird wrappers like �filecite�turn5file0�)
+    text = re.sub(r"\S*filecite\S*", " ", text, flags=re.IGNORECASE)
+
+    # remove any token that contains turnXfileY (extra safety)
+    text = re.sub(r"\S*turn\d+file\d+\S*", " ", text, flags=re.IGNORECASE)
+
+    # remove the exact marker too (in case it appears cleanly)
     text = re.sub(r"", " ", text)
 
-    # Remove any spaced-out "filecite" (f i l e c i t e)
-    text = re.sub(r"(?i)f\s*i\s*l\s*e\s*c\s*i\s*t\s*e", " ", text)
-
-    # Remove any token containing filecite
-    text = re.sub(r"(?i)\S*filecite\S*", " ", text)
-
-    # Remove turn file patterns (turn3file0, turn 3 file 0, turn_3_file_0)
-    text = re.sub(r"(?i)turn\s*\d+\s*file\s*\d+", " ", text)
-    text = re.sub(r"(?i)turn\d+file\d+", " ", text)
-    text = re.sub(r"(?i)\S*turn\d+\s*file\d+\S*", " ", text)
-
-    # Collapse spaced letters sequences: "S u b - e d i t o r" -> "Sub-editor"
-    # First normalize hyphen spacing
-    text = re.sub(r"\s*-\s*", "-", text)
-
-    # Collapse many single-letter tokens into words
-    def _collapse(m):
-        return m.group(0).replace(" ", "")
-    text = re.sub(r"(?:(?<=\b)[A-Za-z]\s+){2,}[A-Za-z](?=\b)", _collapse, text)
-
-    # Improve numbered steps formatting
-    text = re.sub(r"(?<!\n)(\d+)\.\s*", r"\n\1. ", text)
-
-    # Normalize whitespace
-    text = re.sub(r"[ \t]+", " ", text)
-    text = re.sub(r"\n{3,}", "\n\n", text)
-    return text.strip()
+    # normalize spaces
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
 
 # ===============================
-# PARSE Q/A PAIRS (NO CHUNKING!)
+# STRICT ANSWER EXTRACTION
 # ===============================
-QA_PATTERN = re.compile(r"(?:^|\n)Q:\s*(.*?)\nA:\s*(.*?)(?=\nQ:\s*|\Z)", re.S)
+def extract_answer_only(question, docs):
+    q_words = set(re.findall(r"\w+", question.lower()))
+    best_score = 0
+    best_answer = None
 
-def build_qa_documents(mode: str):
-    qa_files = get_qa_files(mode)
-    if not qa_files:
-        return []
+    for d in docs:
+        text = d.page_content
+        blocks = re.split(r"\nQ:\s*", text)
 
-    docs = []
-    for fp in qa_files:
-        raw_docs = TextLoader(fp, encoding="utf-8").load()
-        full_text = "\n".join(d.page_content for d in raw_docs)
-
-        for q, a in QA_PATTERN.findall(full_text):
-            q_clean = q.strip()
-            a_clean = a.strip()
-            if not q_clean or not a_clean:
+        for block in blocks:
+            if "\nA:" not in block:
                 continue
 
-            # store Q and A as one doc (perfect retrieval)
-            docs.append(
-                Document(
-                    page_content=f"Q: {q_clean}\nA: {a_clean}",
-                    metadata={"q": q_clean, "source": os.path.basename(fp)}
-                )
-            )
-    return docs
+            q_part, a_part = block.split("\nA:", 1)
+            q_text = q_part.strip().lower()
+            a_text = a_part.strip()
+
+            a_text = re.split(r"\nQ:\s*", a_text)[0].strip()
+
+            score = len(q_words & set(re.findall(r"\w+", q_text)))
+            if score > best_score:
+                best_score = score
+                best_answer = a_text
+
+    return clean_answer(best_answer) if best_answer else "I couldn’t find a clear answer to that."
 
 # ===============================
-# BUILD INDEX (PER MODE)
+# THINKING MODE (CHAT-AWARE, STILL STRICT)
 # ===============================
-@st.cache_resource
-def load_index(mode: str):
-    docs = build_qa_documents(mode)
-    if not docs:
-        return None
-
-    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-    return FAISS.from_documents(docs, embeddings)
-
-# ===============================
-# ANSWER PICKING (STRICT)
-# ===============================
-def pick_best_answer(question: str, retrieved_docs):
-    q_words = set(re.findall(r"\w+", question.lower()))
-    best_score = -1
-    best_ans = None
-
-    for d in retrieved_docs:
-        q_text = (d.metadata.get("q") or "").lower()
-        # score overlap with the stored question text
-        score = len(q_words & set(re.findall(r"\w+", q_text)))
-
-        if score > best_score:
-            best_score = score
-            # extract answer portion
-            content = d.page_content
-            if "\nA:" in content:
-                best_ans = content.split("\nA:", 1)[1].strip()
-            else:
-                best_ans = content
-
-    return clean_answer(best_ans) if best_ans else "I couldn’t find a clear answer to that."
-
-def thinking_answer(question: str, retrieved_docs, history):
-    # lightweight: bias to previous question words too
+def thinking_answer(question, docs, history):
     q_words = set(re.findall(r"\w+", question.lower()))
     prev_words = set()
+
     if history:
         prev_words = set(re.findall(r"\w+", history[-1]["q"].lower()))
 
-    best_score = -1
-    best_ans = None
+    best_score = 0
+    best_answer = None
 
-    for d in retrieved_docs:
-        q_text = (d.metadata.get("q") or "").lower()
-        words = set(re.findall(r"\w+", q_text))
-        score = len(q_words & words) + len(prev_words & words)
+    for d in docs:
+        text = d.page_content
+        blocks = re.split(r"\nQ:\s*", text)
 
-        if score > best_score:
-            best_score = score
-            content = d.page_content
-            best_ans = content.split("\nA:", 1)[1].strip() if "\nA:" in content else content
+        for block in blocks:
+            if "\nA:" not in block:
+                continue
 
-    return clean_answer(best_ans) if best_ans else "I couldn’t find a clear answer to that."
+            q_part, a_part = block.split("\nA:", 1)
+            q_text = q_part.lower()
+            a_text = re.split(r"\nQ:\s*", a_part)[0].strip()
+
+            score = len(q_words & set(re.findall(r"\w+", q_text)))
+            score += len(prev_words & set(re.findall(r"\w+", q_text)))
+
+            if score > best_score:
+                best_score = score
+                best_answer = a_text
+
+    return clean_answer(best_answer) if best_answer else "I couldn’t find a clear answer to that."
 
 # ===============================
-# DOWNLOAD SOP (ONLY WHEN ASKED)
+# DOWNLOAD SOP INTENT
 # ===============================
 def is_download_sop_request(question: str) -> bool:
     q = question.lower().strip()
     return ("download" in q or "dl" in q or "get" in q) and ("sop" in q or "sops" in q)
 
 def pick_sop_files(mode: str, question: str):
-    # downloadable = any txt that is NOT -QA.txt, filtered by brand
-    all_txt = list_all_txt_files()
-    files = []
-    for fp in all_txt:
-        name = os.path.basename(fp).lower()
-        if name.endswith("-qa.txt"):
-            continue
-        if mode == "Bayut" and not name.startswith("bayut"):
-            continue
-        if mode == "Dubizzle" and not name.startswith("dubizzle"):
-            continue
-        files.append(fp)
-
+    files = get_qa_files(mode)
     if not files:
         return []
 
@@ -269,15 +229,16 @@ def pick_sop_files(mode: str, question: str):
 
 # ===============================
 # UI – QUESTION
-# Buttons tight on the LEFT, tiny gap, Enter submits Ask
 # ===============================
 with st.form("ask_form", clear_on_submit=True):
     q = st.text_input("Ask a question")
 
-    # wider columns so "Clear chat" doesn't wrap
-    b1, b2, _sp = st.columns([2, 3, 15], gap="small")
+    # Ask + Clear beside each other with tiny space
+    b1, b2 = st.columns(2, gap="small")
     ask = b1.form_submit_button("Ask")
     clear = b2.form_submit_button("Clear chat")
+
+# Enter key will submit form -> triggers first submit button (Ask) ✅
 
 # ===============================
 # CLEAR CHAT
@@ -303,33 +264,35 @@ if ask and q.strip():
         st.error("No Q&A files found.")
         st.stop()
 
-    retrieved = index.similarity_search(q, k=8)
+    docs = index.similarity_search(q, k=5)
 
     if answer_mode == "Ultra-Fast":
-        answer = pick_best_answer(q, retrieved)
+        answer = extract_answer_only(q, docs)
     else:
-        answer = thinking_answer(q, retrieved, st.session_state.chat[tool_mode])
+        answer = thinking_answer(q, docs, st.session_state.chat[tool_mode])
 
     st.session_state.chat[tool_mode].append({"q": q, "a": answer})
     st.rerun()
 
 # ===============================
 # CHAT HISTORY (NEWEST FIRST)
-# Question ONLY in colored bubble
+# - bubble ONLY for question
 # ===============================
 def bubble_css(mode: str) -> str:
     if mode == "Bayut":
-        return "background:#EAF7F1;border:1px solid #BFE6D5;"
-    if mode == "Dubizzle":
-        return "background:#FCEBEC;border:1px solid #F3C1C5;"
-    return "background:#F5F6F8;border:1px solid #E2E5EA;"
+        return "background:#EAF7F1;border:1px solid #BFE6D5;"  # light green
+    if mode == "dubizzle":
+        return "background:#FCEBEC;border:1px solid #F3C1C5;"  # light red
+    return "background:#F5F6F8;border:1px solid #E2E5EA;"      # neutral
 
 style = bubble_css(tool_mode)
 chat_list = st.session_state.chat[tool_mode]
 
+# render newest above oldest (reverse order) while keeping stable indices for download keys
 for i in range(len(chat_list) - 1, -1, -1):
     item = chat_list[i]
 
+    # Question bubble ONLY
     st.markdown(
         f"""
         <div style="{style} padding:12px;border-radius:10px;margin-bottom:8px;">
@@ -339,14 +302,16 @@ for i in range(len(chat_list) - 1, -1, -1):
         unsafe_allow_html=True
     )
 
+    # Answer plain text (no bubble, no "A:")
     st.markdown(item.get("a", ""))
 
+    # Download buttons inside chat ONLY when user asked
     downloads = item.get("downloads", [])
     if downloads:
         cols = st.columns(min(3, len(downloads)))
         for j, fp in enumerate(downloads):
             col = cols[j % len(cols)]
-            label_name = os.path.basename(fp).replace(".txt", "").replace("_", " ")
+            label_name = os.path.basename(fp).replace("-QA.txt", "").replace("_", " ")
             with col:
                 with open(fp, "rb") as f:
                     st.download_button(
