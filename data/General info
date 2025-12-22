@@ -1,0 +1,78 @@
+Q: What is the Bayut & dubizzle AI Content Assistant?
+A: It’s an internal AI tool that helps Bayut & dubizzle teams find information faster, draft content, and support daily content operations using internal reference files and the knowledge base.
+
+Q: Who is this tool for?
+A: Content team members (writers, editors, SEO, operations support) who need quick, accurate answers and content help related to Bayut & dubizzle workflows and internal references.
+
+Q: What can the assistant help with?
+A: Answering internal process questions (based on available reference files), summarizing and extracting key details from internal documents, drafting content (headlines, snippets, short paragraphs, meta descriptions), and creating quick checklists for content tasks and publishing steps.
+
+Q: What can’t the assistant do?
+A: It can’t apply changes directly to CMS, listings, or backend systems. It shouldn’t be used as the only source of truth for legal/compliance decisions, and it can’t replace final human review for publishing.
+
+Q: How does the assistant get its answers?
+A: It retrieves relevant information from the internal knowledge base (your reference files) and uses that context to generate an answer.
+
+Q: Does it search the internet?
+A: No—this assistant is designed to rely on internal knowledge files only (unless external content is intentionally added to the knowledge base).
+
+Q: How do I ask questions to get the best answers?
+A: Ask one question at a time, be specific (mention team, channel, platform, or workflow), and use internal terms exactly as written in the SOPs.
+
+Q: What if the answer feels unrelated or too generic?
+A: The relevant info may not exist in the knowledge base, or the question is too broad. Rephrase using exact SOP keywords or add the missing reference document and rebuild the index.
+
+Q: What is the difference between “General”, “Bayut”, and “Dubizzle” modes (if enabled)?
+A: General is for cross-brand/shared processes, Bayut is for Bayut-specific references, and Dubizzle is for dubizzle-specific references.
+
+Q: Can the assistant write in both English and Arabic?
+A: Yes. You can ask it to respond in Arabic, English, or both.
+
+Q: How do we ensure accuracy?
+A: Keep reference files updated, use consistent document structure/naming, rebuild the knowledge base after updates, and always do a quick human review before publishing.
+
+Q: Can we add more documents or SOPs to improve it?
+A: Yes. The assistant becomes more reliable as you add well-structured, up-to-date reference files to the knowledge base.
+
+Q: What formats should we use for knowledge files?
+A: Text-based formats are best (like .txt). Keep content clean, structured, and consistent with internal terminology.
+
+Q: How often should we rebuild or refresh the knowledge base?
+A: Any time new SOPs are added or existing SOPs are updated. If content changes frequently, rebuild on a regular cadence.
+
+Q: Is the chat history saved?
+A: It depends on the deployment/configuration. Some setups keep chat history for continuity; others don’t for privacy.
+
+Q: What should I do if I see outdated answers?
+A: Update/replace the source document in the knowledge base and rebuild the index.
+
+Q: Can it help with training new team members?
+A: Yes—use it as a self-serve Q&A tool for onboarding, definitions, workflows, and internal checklists.
+
+Q: Who is responsible for the app?
+A: Faten Aish and Sarah Al Nawah.
+
+in addition add general chat the user may wrtite
+
+Q: What can I write in the chat?
+A: You can write questions, requests, or paste text you want help with—like:
+
+“How do we handle [process name]?”
+
+“Give me the steps for [task].”
+
+“Summarize this SOP section:” (then paste text)
+
+“Extract the key points from this:” (then paste text)
+
+“Turn this into a checklist:” (then paste text)
+
+“Draft a short message/email for this situation:” (then describe it)
+
+“Explain this term used internally:” (then write the term)
+
+“Find where this is mentioned in the SOP:” (keyword/phrase)
+
+“Compare Bayut vs dubizzle approach for [topic].”
+
+“Answer in Arabic / English / both.”
