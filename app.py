@@ -18,39 +18,40 @@ st.set_page_config(
 )
 
 # ===============================
-# UI CSS (CENTERED QUESTION BOX + SMALLER MODE TITLE)
+# UI CSS (BIGGER MODE TITLE + CLOSER TO BOX)
 # ===============================
 st.markdown(
     """
     <style>
+      /* less gap between Ask/Clear */
       div[data-testid="stHorizontalBlock"] { gap: 0.12rem; }
       button { white-space: nowrap !important; }
 
-      /* Mode titles smaller (~17px) */
-      .mode-title {
-        font-size: 17px !important;
-        font-weight: 700 !important;
-        margin-top: 8px !important;
-        margin-bottom: 10px !important;
+      /* ✅ Mode title bigger + closer */
+      .mode-title{
+        font-size: 20px !important;
+        font-weight: 750 !important;
+        margin-top: 6px !important;
+        margin-bottom: 6px !important;
+        line-height: 1.2 !important;
       }
 
-      /* Center question form and add space above */
-      .question-wrap {
+      /* ✅ Center question form and reduce top spacing */
+      .question-wrap{
         max-width: 980px;
-        margin: 28px auto 10px auto;  /* top space + centered */
+        margin: 10px auto 10px auto;   /* less space above */
       }
 
-      .question-wrap [data-testid="stForm"] {
+      .question-wrap [data-testid="stForm"]{
         border: 1px solid #E7E9EE;
         border-radius: 12px;
-        padding: 18px 18px 12px 18px;
+        padding: 16px 18px 10px 18px;
         background: #fff;
       }
 
-      /* Hide default label for text_input */
+      /* hide default label for text_input */
       .question-wrap div[data-testid="stTextInput"] > label { display:none; }
 
-      /* Nicer separator */
       hr { margin: 14px 0; }
     </style>
     """,
@@ -483,7 +484,7 @@ chat_key = tool_mode
 st.session_state.chat.setdefault(chat_key, [])
 
 # ===============================
-# TITLE
+# MAIN TITLE
 # ===============================
 st.markdown(
     """
@@ -498,8 +499,10 @@ st.markdown(
 )
 
 # ===============================
-# MODE TITLE (SMALLER)
+# CENTERED MODE TITLE + QUESTION UI (TITLE IS NOW CLOSE TO THE BOX)
 # ===============================
+st.markdown('<div class="question-wrap">', unsafe_allow_html=True)
+
 if tool_mode == "Bayut":
     st.markdown(
         '<div class="mode-title">Ask <span style="color:#0E8A6D;font-weight:800;">Bayut</span> Anything</div>',
@@ -512,11 +515,6 @@ elif tool_mode == "Dubizzle":
     )
 else:
     st.markdown('<div class="mode-title">General Assistant</div>', unsafe_allow_html=True)
-
-# ===============================
-# QUESTION UI (CENTERED + SPACE ABOVE)
-# ===============================
-st.markdown('<div class="question-wrap">', unsafe_allow_html=True)
 
 with st.form("ask_form", clear_on_submit=True):
     q = st.text_input("", placeholder="Type your question here...")
