@@ -1,0 +1,98 @@
+Q: How does Bayut describe the role of color in its brand?
+A: Color is considered a cornerstone of Bayut design. It is used to distinguish the brand and create consistent experiences across marketing and products. Color is applied meaningfully, from high-level storytelling about teaming up to focused, functional use in product interfaces to highlight what users need to see.
+
+Q: What is the overall positioning of the Bayut brand?
+A: Bayut is positioned as the top pick for people finding homes in the UAE. The brand focuses on serving both consumers and partners by making it easy to publish and find properties.
+
+Q: What is the purpose of the Bayut brand guidelines?
+A: The purpose of the Bayut brand guidelines is to lay the foundation of Bayut’s narrative and provide the assets needed to tell compelling, relevant, and meaningful stories. They include guidance on how and when to use each brand element.
+
+Q: Which core brand elements are included in the Bayut guidelines?
+A: The core brand elements included in the Bayut guidelines are color, typography, iconography, presentation templates, and logos, along with detailed usage instructions to ensure consistency across all touchpoints.
+
+Q: What is the Bayut digital color palette?
+A: The Bayut digital color palette includes the following hex values: #28b16d, #006169, #2b919a, #2399d8, #000000, #222222, #7c7c7c, #dedede, #f7f7f7, and #ffffff.
+
+Q: How are Bayut colors intended to be used across marketing and product?
+A: Bayut colors are intended to be used purposefully to support hierarchy, clarity, and user focus. In marketing, they support storytelling and brand recognition, while in product they highlight key information and interface elements without visual noise.
+
+Q: How do the Bayut brand guidelines evolve over time?
+A: The Bayut brand guidelines are treated as a living toolkit that is constantly iterated and expanded as storytelling needs evolve. New assets and guidance are added as the brand grows.
+
+Q: What are the three main goals of Bayut content?
+A: The three main goals of Bayut content are to empower readers with the right information to make decisions, educate them about life and property in the UAE, and engage them using an easy-to-understand and friendly tone.
+
+Q: How is the Bayut voice described?
+A: The Bayut voice is local, friendly, and original. It speaks from a resident perspective rather than a tourist one, uses an approachable tone, and always provides unique and original information.
+
+Q: What personality traits define Bayut’s way of speaking?
+A: Bayut’s way of speaking is easy, personal, direct, humble, and convivial. It should not sound overly amusing or like it is trying too hard to be funny.
+
+Q: How formal should Bayut’s tone be?
+A: Bayut’s tone is mostly formal but relaxed and warm. It reflects a modern digital brand that remains respectful, clear, human, and approachable.
+
+Q: Does Bayut prefer active or passive voice?
+A: Bayut prefers active voice, where the subject performs the action. Passive voice should only be used when the action itself needs emphasis.
+
+Q: How should positivity be reflected in Bayut content?
+A: Bayut encourages positive phrasing and avoiding unnecessary negatives when a positive reformulation is possible. This helps keep content clear and encouraging.
+
+Q: What basic writing principles should always be followed?
+A: Writers should write simply and clearly, use descriptive titles and subtitles, organise information into sections and paragraphs, use British English, be precise, remove unnecessary sentences, and maintain a consistent brand tone.
+
+Q: Which languages are used in Bayut content?
+A: Bayut content is written in Arabic and English. If any other language appears, its meaning must be explained so all readers can understand it.
+
+Q: What is Bayut’s approach to slang and jargon?
+A: Bayut avoids slang and heavy jargon. When technical terms are required, they should be clearly explained for non-expert readers.
+
+Q: What are the rules for capitalisation in Bayut content?
+A: Titles use sentence case, sentences and emails capitalise only the first word, and unnecessary capitalisation should be avoided.
+
+Q: How should abbreviations be used in Bayut content?
+A: Abbreviations should be spelled out in full the first time they appear, followed by the abbreviation in brackets, and then used in abbreviated form afterward.
+
+Q: What is Bayut’s guidance on contractions?
+A: Contractions are allowed and encouraged when appropriate because they make content more readable and conversational.
+
+Q: How are numbers and percentages written in Bayut content?
+A: Numbers at the start of a sentence are spelled out. Numbers one to nine are spelled out in running text, while numerals are used for ten and above. Commas are used for thousands, and the percent symbol is used except at the start of a sentence.
+
+Q: How should ranges be written?
+A: Ranges should be written using a hyphen, such as 5-15 percent.
+
+Q: How is currency written in Bayut content?
+A: Currency should be written using AED before the number, with dots for decimals and k, M, or B for thousands, millions, and billions.
+
+Q: What are the rules for time and date formatting?
+A: Time uses a 12-hour format, and dates use day, month, year. Event listings and articles follow specific long-form date styles.
+
+Q: How should phone numbers be formatted?
+A: Phone numbers should use dashes without spaces and include the country code when written in international format.
+
+Q: What is Bayut’s rule for using ampersands?
+A: Ampersands should not be used unless they are part of an official company or brand name.
+
+Q: How often should exclamation points be used?
+A: Exclamation points should be used sparingly and never more than one at a time.
+
+Q: How are department names written in Bayut content?
+A: Department names are not capitalised unless they contain proper nouns or formal titles.
+
+Q: How should names and titles be handled in Bayut content?
+A: Full names are used on first mention, followed by first names afterward. Royal and government titles should always be written in full.
+
+Q: How should Haider Ali Khan be referenced in press content?
+A: He should be referred to as Haider Ali Khan, CEO of Bayut.com on first mention, and then referred to as he afterward.
+
+Q: What is the rule for area names in Bayut content?
+A: Official area names as listed on Bayut must be used. When unsure, writers should verify with official sources or the Operations team.
+
+Q: How should Bayut be referenced in different types of content?
+A: In blogs, the brand is referred to as Bayut. In press reports, it should be referred to as Bayut.com.
+
+Q: What are the guidelines for image use and copyright?
+A: Bayut prefers original images, followed by internal photography, then Shutterstock. Editorial-use-only images should be avoided, and proper credit must be given for third-party images.
+
+Q: What are the rules for text formatting?
+A: Italics are used for non-English words. Combining italics, capitalisation, and underlining together should be avoided.
