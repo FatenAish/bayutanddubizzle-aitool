@@ -27,7 +27,7 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 st.session_state.setdefault("chat", {
     "General": [],
     "Bayut": [],
-    "dubizzle": []
+    "Dubizzle": []
 })
 
 # ===============================
@@ -35,7 +35,7 @@ st.session_state.setdefault("chat", {
 # ===============================
 with st.sidebar:
     st.header("Select tool")
-    tool_mode = st.radio("", ["General", "Bayut", "dubizzle"], index=0)
+    tool_mode = st.radio("", ["General", "Bayut", "Dubizzle"], index=0)
 
     st.markdown("---")
     answer_mode = st.radio("Answer mode", ["Ultra-Fast", "Thinking"], index=0)
@@ -47,7 +47,7 @@ st.markdown(
     """
     <h1 style="text-align:center;font-weight:800;">
       <span style="color:#0E8A6D;">Bayut</span> &
-      <span style="color:#D71920;">dubizzle</span>
+      <span style="color:#D71920;">Dubizzle</span>
       AI Content Assistant
     </h1>
     <p style="text-align:center;color:#666;">Internal AI Assistant</p>
@@ -80,7 +80,7 @@ def get_qa_files(mode: str):
         lf = f.lower()
         if mode == "Bayut" and not lf.startswith("bayut"):
             continue
-        if mode == "dubizzle" and not lf.startswith("dubizzle"):
+        if mode == "Dubizzle" and not lf.startswith("dubizzle"):
             continue
 
         files.append(os.path.join(DATA_DIR, f))
@@ -241,7 +241,6 @@ def pick_sop_files(mode: str, question: str):
 with st.form("ask_form", clear_on_submit=True):
     q = st.text_input("Ask a question")
 
-    # 3 columns so buttons stay on the LEFT, not spread across the page
     b1, b2, _sp = st.columns([1, 1, 8], gap="small")
     ask = b1.form_submit_button("Ask")
     clear = b2.form_submit_button("Clear chat")
@@ -287,7 +286,7 @@ if ask and q.strip():
 def bubble_css(mode: str) -> str:
     if mode == "Bayut":
         return "background:#EAF7F1;border:1px solid #BFE6D5;"  # light green
-    if mode == "dubizzle":
+    if mode == "Dubizzle":
         return "background:#FCEBEC;border:1px solid #F3C1C5;"  # light red
     return "background:#F5F6F8;border:1px solid #E2E5EA;"      # neutral
 
@@ -297,7 +296,6 @@ chat_list = st.session_state.chat[tool_mode]
 for i in range(len(chat_list) - 1, -1, -1):
     item = chat_list[i]
 
-    # Question bubble ONLY
     st.markdown(
         f"""
         <div style="{style} padding:12px;border-radius:10px;margin-bottom:8px;">
@@ -307,10 +305,8 @@ for i in range(len(chat_list) - 1, -1, -1):
         unsafe_allow_html=True
     )
 
-    # Answer plain (already cleaned)
     st.markdown(item.get("a", ""))
 
-    # Download buttons inside chat ONLY when user asked
     downloads = item.get("downloads", [])
     if downloads:
         cols = st.columns(min(3, len(downloads)))
