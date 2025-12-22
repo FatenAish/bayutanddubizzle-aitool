@@ -22,7 +22,7 @@ st.set_page_config(
 # ===============================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
-INDEX_PATH = "/tmp/faiss_index"   # ✅ SINGLE INDEX (FAST)
+INDEX_PATH = "/tmp/faiss_index"   # single persistent index
 
 # ===============================
 # SESSION STATE
@@ -63,24 +63,44 @@ st.markdown(
 )
 
 # ===============================
-# EMBEDDINGS + LLM
+# 🔑 SLOW + SAFE EMBEDDINGS (FIX)
 # ===============================
+class SlowSafeEmbeddings(OpenAIEmbeddings):
+    def embed_documents(self, texts):
+        results = []
+        batch_size = 10  # small batches prevent rate limit
+
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i:i + batch_size]
+
+            while True:
+                try:
+                    results.extend(super().embed_documents(batch))
+                    time.sleep(0.4)  # intentional slowdown
+                    break
+                except Exception as e:
+                    if "RateLimit" in str(e):
+                        time.sleep(5)  # wait and retry
+                    else:
+                        raise
+        return results
+
 @st.cache_resource
 def get_embeddings():
-    return OpenAIEmbeddings(model="text-embedding-3-small")
+    return SlowSafeEmbeddings(model="text-embedding-3-small")
 
 @st.cache_resource
 def get_llm():
     return ChatOpenAI(model="gpt-4o-mini", temperature=0)
 
 # ===============================
-# BUILD OR LOAD INDEX (ONCE)
+# BUILD / LOAD INDEX (ONCE)
 # ===============================
 @st.cache_resource
 def load_index_once():
     embeddings = get_embeddings()
 
-    # ✅ FAST PATH — LOAD
+    # FAST PATH — load existing index
     if os.path.exists(INDEX_PATH):
         return FAISS.load_local(
             INDEX_PATH,
@@ -88,7 +108,7 @@ def load_index_once():
             allow_dangerous_deserialization=True
         )
 
-    # ❗ BUILD ONCE ONLY
+    # BUILD ONCE
     docs = []
     for f in os.listdir(DATA_DIR):
         if f.lower().endswith(".txt"):
@@ -113,7 +133,7 @@ def load_index_once():
 index = load_index_once()
 
 # ===============================
-# SMART QUERY EXPANSION
+# SMART QUERY FIXES
 # ===============================
 def expand_query(q: str) -> str:
     x = q.strip()
@@ -134,10 +154,10 @@ def is_app_question(q: str):
 def app_description():
     return (
         "This is an internal AI assistant for Bayut & Dubizzle.\n\n"
-        "It searches internal SOPs and answers questions naturally.\n"
-        "You can ask things like:\n"
+        "It searches internal SOPs and answers questions naturally.\n\n"
+        "Examples:\n"
         "- When do PM campaigns launch?\n"
-        "- What is the SOP for newsletters?"
+        "- What’s the SOP for newsletters?"
     )
 
 # ===============================
