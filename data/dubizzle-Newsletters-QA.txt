@@ -1,21 +1,21 @@
 dubizzle Newsletters – Q&A
 
 Q: What are dubizzle newsletters?
-A: dubizzle newsletters are weekly email campaigns for Property and Cars categories that feature selected blog content, listings, and promotions to engage users and drive traffic to the platform. fileciteturn5file0
+A: dubizzle newsletters are weekly email campaigns for Property and Cars categories that feature selected blog content, listings, and promotions to engage users and drive traffic to the platform. 
 
 Q: What is the purpose of dubizzle newsletters?
-A: The purpose is to increase user engagement, drive qualified traffic, nurture leads, support retention, and enhance brand visibility and content discoverability. fileciteturn5file0
+A: The purpose is to increase user engagement, drive qualified traffic, nurture leads, support retention, and enhance brand visibility and content discoverability. 
 
 Q: Which categories are covered in dubizzle newsletters?
-A: dubizzle newsletters cover two main categories: Property and Cars. fileciteturn5file0
+A: dubizzle newsletters cover two main categories: Property and Cars. 
 
 Q: Which teams are involved in dubizzle newsletters?
-A: The process involves the Content Marketing Team, Design Team, and Performance Marketing Team. fileciteturn5file0
+A: The process involves the Content Marketing Team, Design Team, and Performance Marketing Team. 
 
 Q: Who is responsible for dubizzle newsletters?
 A:
 - Content Marketing Team: prepares calendars, selects topics, writes content, and conducts internal testing
-- Performance Marketing Team: handles technical setup, scheduling, and monitoring delivery fileciteturn5file0
+- Performance Marketing Team: handles technical setup, scheduling, and monitoring delivery 
 
 Q: Who are the Points of Contact (POCs)?
 A:
@@ -28,11 +28,10 @@ A:
   - Cars: Hala Al-Salaheen
   - AR Lead: Odai Quraan
 - Final Content Approval: Sarah Alnawah
-- Performance Marketing (CLM): Ghaith Ksebi fileciteturn5file0
+- Performance Marketing (CLM): Ghaith Ksebi 
 
 Q: How often are dubizzle newsletters prepared?
-A: A monthly content calendar is prepared by the 14th of each month for both Property and Cars newsletters. fileciteturn5file0
-
+A: A monthly content calendar is prepared by the 14th of each month for both Property and Cars newsletters.
 Q: How does the dubizzle newsletter workflow work?
 A:
 1. Prepare the monthly newsletter calendar and submit it for approval
@@ -42,37 +41,36 @@ A:
 5. Content Leads review language quality and update status to “Ready for Testing”
 6. Run internal testing via Slack and MoEngage
 7. Submit the newsletter for final approval
-8. Performance Marketing schedules and distributes the newsletter fileciteturn5file0
+8. Performance Marketing schedules and distributes the newsletter 
 
 Q: How is language review handled?
 A:
 - Arabic newsletters are reviewed by Odai Quraan
-- English newsletters are reviewed by Quratulain Khan fileciteturn5file0
+- English newsletters are reviewed by Quratulain Khan
 
 Q: How is internal testing done?
 A:
 - Test newsletters are shared in the #dbz-newsletters Slack group
 - A test send is triggered via MoEngage
-- Teams review layout, links, visuals, and mobile view before final approval fileciteturn5file0
+- Teams review layout, links, visuals, and mobile view before final approval 
 
 Q: What is the testing and roll-out schedule?
 A:
 - Cars newsletter: tested every Monday, sent every Tuesday
-- Property newsletter: tested every Tuesday, sent every Wednesday fileciteturn5file0
+- Property newsletter: tested every Tuesday, sent every Wednesday 
 
 Q: How is newsletter performance monitored?
-A: Performance is reviewed 5 days after sending using MoEngage analytics and reflected in the Newsletter Report dashboard. fileciteturn5file0
-
+A: Performance is reviewed 5 days after sending using MoEngage analytics and reflected in the Newsletter Report dashboard. 
 Q: What metrics are included in the weekly newsletter report?
 A:
 - Emails sent
 - Open rate
 - Clicks and CTR
 - Unsubscribes
-- Traffic to website, social media, apps, and Google reviews fileciteturn5file0
+- Traffic to website, social media, apps, and Google reviews 
 
 Q: What tools and references are used?
 A:
 - Cars Calendar Sheet and Property Calendar Sheet
 - Airtable – Newsletter Section
-- Newsletter Report dashboard fileciteturn5file0
+- Newsletter Report dashboard 
