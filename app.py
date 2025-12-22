@@ -20,13 +20,8 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-      /* tighter horizontal spacing between columns (buttons closer) */
-      div[data-testid="stHorizontalBlock"] { gap: 0.18rem; }
-
-      /* prevent button text wrapping */
+      div[data-testid="stHorizontalBlock"] { gap: 0.14rem; }   /* less space between buttons */
       button { white-space: nowrap !important; }
-
-      /* bold label */
       .ask-label { font-weight: 800; margin-bottom: 6px; }
     </style>
     """,
@@ -70,26 +65,6 @@ def keyword_overlap(a: str, b: str) -> int:
     bw = set(re.findall(r"[a-zA-Z0-9]+", b.lower()))
     return len(aw & bw)
 
-def is_listings_intent(q: str) -> bool:
-    ql = q.lower()
-    keys = [
-        "listing", "listings", "wrong name", "wrong names", "correction", "correct",
-        "update", "merge", "archive", "location", "algolia", "parent location"
-    ]
-    return any(k in ql for k in keys)
-
-def is_channel_handler_question(q: str) -> bool:
-    ql = q.lower()
-    return ("channel handler" in ql) or ("chanel handler" in ql)
-
-def is_name_question(q: str) -> bool:
-    ql = q.lower().strip()
-    return any(p in ql for p in [
-        "its name", "it's name", "what is its name", "what's its name",
-        "do you know its name", "do you know it's name",
-        "name?", "the name"
-    ])
-
 def is_download_sop_request(question: str) -> bool:
     q = question.lower().strip()
     return (("download" in q) or ("dl" in q) or ("get" in q)) and (("sop" in q) or ("sops" in q))
@@ -102,7 +77,7 @@ def bubble_style(mode: str) -> str:
     return "background:#F5F6F8;border:1px solid #E2E5EA;"
 
 def clean_answer(text: str) -> str:
-    """Aggressive cleanup: removes citations/artifacts/control chars/bullets; returns natural text."""
+    """Clean citations/artifacts/control chars/bullets and remove embedded Q/A blocks."""
     if not text:
         return ""
 
@@ -117,9 +92,13 @@ def clean_answer(text: str) -> str:
     # Remove filecite word even if surrounded by symbols
     text = re.sub(r"[^A-Za-z0-9]*filecite[^A-Za-z0-9]*", "", text, flags=re.IGNORECASE)
 
-    # Remove repeated Q:/A:
+    # Remove repeated Q:/A: tokens inside answers
     text = re.sub(r"\bQ:\s*", "", text)
     text = re.sub(r"\bA:\s*", "", text)
+
+    # Remove Q1) / Q2) style blocks if they leak into output
+    text = re.sub(r"\bQ\d+\)\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bA:\s*", "", text, flags=re.IGNORECASE)
 
     # Remove asterisks bullets
     text = text.replace("*", " ")
@@ -140,27 +119,96 @@ def clean_answer(text: str) -> str:
     return text
 
 # ===============================
-# Q/A PARSER
+# FLEXIBLE Q/A PARSER (supports Q:/A: AND Q1)/A:)
 # ===============================
-QA_PAIR_RE = re.compile(
-    r"(?:^|\n)Q:\s*(.*?)\nA:\s*([\s\S]*?)(?=\nQ:\s*|\Z)",
-    re.IGNORECASE
-)
+Q_LINE_RE = re.compile(r"^\s*Q(\d+)?\s*[\)\:\.\-]?\s*(.+?)\s*$", re.IGNORECASE)
+A_LINE_RE = re.compile(r"^\s*A\s*[\)\:\.\-]?\s*(.*)\s*$", re.IGNORECASE)
 
-def parse_qa_pairs(text: str):
+def parse_qa_pairs_flexible(text: str):
+    """
+    Supports:
+    - Q: ... \n A: ...
+    - Q1) ... \n A: ...
+    - Q2) ... \n A: ...
+    Answers can span multiple lines until next Q.
+    """
+    lines = text.splitlines()
     pairs = []
-    for m in QA_PAIR_RE.finditer(text):
-        q = (m.group(1) or "").strip()
-        a = (m.group(2) or "").strip()
-        if q and a:
-            pairs.append((q, a))
+
+    cur_q = None
+    cur_a_lines = []
+    in_answer = False
+
+    def flush():
+        nonlocal cur_q, cur_a_lines, in_answer
+        if cur_q and cur_a_lines:
+            a = "\n".join(cur_a_lines).strip()
+            if a:
+                pairs.append((cur_q.strip(), a))
+        cur_q = None
+        cur_a_lines = []
+        in_answer = False
+
+    for line in lines:
+        qmatch = Q_LINE_RE.match(line)
+        if qmatch:
+            flush()
+            cur_q = qmatch.group(2).strip()
+            continue
+
+        amatch = A_LINE_RE.match(line)
+        if amatch and cur_q:
+            in_answer = True
+            first = amatch.group(1).strip()
+            if first:
+                cur_a_lines.append(first)
+            continue
+
+        if in_answer and cur_q:
+            # keep collecting answer until next Q
+            cur_a_lines.append(line.rstrip())
+
+    flush()
     return pairs
+
+def file_has_qa_pairs(text: str) -> bool:
+    # detect Q style
+    return bool(re.search(r"^\s*Q(\d+)?\s*[\)\:\.]", text, flags=re.IGNORECASE | re.MULTILINE)) and \
+           bool(re.search(r"^\s*A\s*[:\)\.]", text, flags=re.IGNORECASE | re.MULTILINE))
+
+# ===============================
+# INTENT RULES
+# ===============================
+def is_listings_intent(q: str) -> bool:
+    ql = q.lower()
+    keys = [
+        "listing", "listings", "wrong name", "wrong names", "correction", "correct",
+        "update", "merge", "archive", "location", "algolia", "parent location",
+        "poc", "point of contact", "contact person", "channel handler", "chanel handler"
+    ]
+    return any(k in ql for k in keys)
+
+def is_channel_handler_question(q: str) -> bool:
+    ql = q.lower()
+    return ("channel handler" in ql) or ("chanel handler" in ql)
+
+def is_poc_question(q: str) -> bool:
+    ql = q.lower()
+    return ("poc" in ql) or ("point of contact" in ql) or ("contact person" in ql)
+
+def is_name_question(q: str) -> bool:
+    ql = q.lower().strip()
+    return any(p in ql for p in [
+        "its name", "it's name", "what is its name", "what's its name",
+        "do you know its name", "do you know it's name",
+        "name?", "the name"
+    ])
 
 # ===============================
 # FILE SELECTION
 # ===============================
 MARKETING_BLOCK = ["pm", "campaign", "newsletter", "social", "paid", "performance", "design team"]
-LISTINGS_ALLOW = ["correction", "update", "listing", "listings", "location", "algolia"]
+LISTINGS_ALLOW = ["correction", "update", "listing", "listings", "location", "algolia", "projects", "project"]
 
 def list_txt_files():
     if not os.path.isdir(DATA_DIR):
@@ -182,24 +230,26 @@ def mode_allows_file(mode: str, filename_lower: str) -> bool:
     return True
 
 def get_qa_files(mode: str):
+    """Files that contain Q/A pairs (supports Q1) / A: too)."""
     files = []
     for fp in list_txt_files():
         name = os.path.basename(fp).lower()
         if not mode_allows_file(mode, name):
             continue
         raw = read_text(fp)
-        if "Q:" in raw and "\nA:" in raw:
+        if file_has_qa_pairs(raw):
             files.append(fp)
     return files
 
 def get_sop_files(mode: str):
+    """Plain SOP files without Q/A pairs."""
     files = []
     for fp in list_txt_files():
         name = os.path.basename(fp).lower()
         if not mode_allows_file(mode, name):
             continue
         raw = read_text(fp)
-        if not ("Q:" in raw and "\nA:" in raw):
+        if not file_has_qa_pairs(raw):
             files.append(fp)
     return files
 
@@ -238,9 +288,10 @@ def load_qa_index(mode: str):
     docs = []
     for fp in qa_files:
         raw = read_text(fp)
-        for q, a in parse_qa_pairs(raw):
+        pairs = parse_qa_pairs_flexible(raw)
+        for q, a in pairs:
             docs.append(Document(
-                page_content=q.strip(),
+                page_content=q.strip(),  # embed only question
                 metadata={"answer": a.strip(), "source_file": os.path.basename(fp).lower()}
             ))
 
@@ -260,8 +311,7 @@ def load_sop_index(mode: str):
     docs = []
     for fp in sop_files:
         raw = read_text(fp)
-        chunks = splitter.split_text(raw)
-        for c in chunks:
+        for c in splitter.split_text(raw):
             docs.append(Document(page_content=c, metadata={"source_file": os.path.basename(fp).lower()}))
 
     if not docs:
@@ -279,38 +329,7 @@ def is_marketing_file(name_lower: str) -> bool:
 
 def is_listings_file(name_lower: str) -> bool:
     nl = (name_lower or "").lower()
-    return any(k in nl for k in LISTINGS_ALLOW) or nl.startswith("both")
-
-def answer_from_sop_listings_first(question: str, sop_index, history):
-    if sop_index is None:
-        return None
-
-    results = sop_index.similarity_search(question, k=12)
-    if not results:
-        return None
-
-    filtered = []
-    for d in results:
-        src = (d.metadata or {}).get("source_file", "")
-        if is_marketing_file(src):
-            continue
-        if is_listings_file(src):
-            filtered.append(d)
-
-    if not filtered:
-        return None
-
-    # "its name?" follow-up: SOP does not contain channel name / specific handler person name
-    if is_name_question(question):
-        return ("The SOP doesn’t mention the Slack channel name or a specific person’s name for the Channel Handler role. "
-                "It only lists POCs: Content (AR) Faten Aish, and Operations Safieeldeen.")
-
-    if is_channel_handler_question(question):
-        return ("The Channel Handler (Coordination Lead) reviews the correction request, coordinates it with Operations, "
-                "tracks progress, and verifies the change live after it’s updated.")
-
-    return ("The Content team submits the correction request, the Channel Handler reviews and coordinates it, "
-            "Operations applies the update, and the Channel Handler verifies it live before closing it in the tracking sheet.")
+    return any(k in nl for k in LISTINGS_ALLOW) or nl.startswith("both") or ("corrections" in nl)
 
 def answer_from_qa(question: str, qa_index, answer_mode: str, history, force_listings_filter: bool = False):
     if qa_index is None:
@@ -326,14 +345,16 @@ def answer_from_qa(question: str, qa_index, answer_mode: str, history, force_lis
     if not results:
         return None
 
-    listings_intent = is_listings_intent(question) or force_listings_filter
+    listings_scope = is_listings_intent(question) or force_listings_filter
 
     filtered = []
     for d in results:
         src = (d.metadata or {}).get("source_file", "")
-        if listings_intent:
+        if listings_scope:
+            # HARD BLOCK marketing/pm files
             if is_marketing_file(src):
                 continue
+            # ONLY listings-related files
             if not is_listings_file(src):
                 continue
         filtered.append(d)
@@ -341,6 +362,7 @@ def answer_from_qa(question: str, qa_index, answer_mode: str, history, force_lis
     if not filtered:
         return None
 
+    # pick best by overlap to avoid wrong pick
     best_doc = None
     best_score = -1
     for d in filtered:
@@ -349,36 +371,51 @@ def answer_from_qa(question: str, qa_index, answer_mode: str, history, force_lis
             best_score = ov
             best_doc = d
 
-    if best_doc is None or best_score <= 0:
+    if best_doc is None:
         return None
 
     ans = clean_answer((best_doc.metadata or {}).get("answer", ""))
     return ans if ans else None
 
+def answer_from_sop_fallback(question: str, sop_index):
+    if sop_index is None:
+        return None
+    res = sop_index.similarity_search(question, k=4)
+    if res:
+        return clean_answer(res[0].page_content)[:450]
+    return None
+
 def smart_answer(question: str, qa_index, sop_index, answer_mode: str, history):
-    # If any of the last 3 questions were listings-related, treat short/name follow-ups as listings too
+    # follow-up lock: if last questions were listings, keep vague follow-ups inside listings
     recent_qs = " ".join([h.get("q", "") for h in (history[-3:] if history else [])]).lower()
     followup_to_listings = is_listings_intent(recent_qs) and (
-        is_name_question(question) or is_channel_handler_question(question) or len(re.findall(r"[a-zA-Z0-9]+", question)) <= 5
+        is_name_question(question) or is_poc_question(question) or is_channel_handler_question(question) or
+        len(re.findall(r"[a-zA-Z0-9]+", question)) <= 6
     )
 
-    if is_listings_intent(question) or followup_to_listings:
-        a = answer_from_sop_listings_first(question, sop_index, history)
-        if a:
-            return a
+    listings_scope = is_listings_intent(question) or followup_to_listings
+
+    if listings_scope:
+        # ✅ IMPORTANT: QA FIRST (so you get exact POCs + exact Channel Handler name)
         a = answer_from_qa(question, qa_index, answer_mode, history, force_listings_filter=True)
         if a:
             return a
+
+        # fallback: SOP chunk
+        b = answer_from_sop_fallback(question, sop_index)
+        if b:
+            return b
+
         return "I couldn’t find a clear answer to that."
 
-    a = answer_from_qa(question, qa_index, answer_mode, history)
+    # non-listings normal QA
+    a = answer_from_qa(question, qa_index, answer_mode, history, force_listings_filter=False)
     if a:
         return a
 
-    if sop_index is not None:
-        res = sop_index.similarity_search(question, k=4)
-        if res:
-            return clean_answer(res[0].page_content)[:450]
+    b = answer_from_sop_fallback(question, sop_index)
+    if b:
+        return b
 
     return "I couldn’t find a clear answer to that."
 
@@ -423,8 +460,8 @@ with st.form("ask_form", clear_on_submit=True):
     st.markdown('<div class="ask-label">Ask a question</div>', unsafe_allow_html=True)
     q = st.text_input("", placeholder="Type your question here...")
 
-    # ✅ centered, closer buttons
-    left, mid, right = st.columns([4, 2.4, 4])
+    # centered + closer buttons
+    left, mid, right = st.columns([4, 2.3, 4])
     with mid:
         b1, b2 = st.columns([1, 1], gap="small")
         ask = b1.form_submit_button("Ask")
