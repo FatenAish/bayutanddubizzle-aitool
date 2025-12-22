@@ -2,16 +2,23 @@ import os
 import streamlit as st
 import hashlib
 
+# =====================================================
+# 🔐 HARD ACCESS GATE (SESSION + URL LOCK)
+# =====================================================
 ACCESS_CODE = os.getenv("ACCESS_CODE", "")
 REQUIRE_CODE = os.getenv("REQUIRE_CODE", "0") == "1"
 
-def _code_hash(code: str) -> str:
+def _h(code: str) -> str:
     return hashlib.sha256(code.encode()).hexdigest()
 
 if REQUIRE_CODE:
-    expected_hash = _code_hash(ACCESS_CODE)
+    expected = _h(ACCESS_CODE)
 
-    if st.session_state.get("unlock_hash") != expected_hash:
+    qp = st.experimental_get_query_params()
+    unlocked = st.session_state.get("unlock_hash") == expected
+
+    # 🚨 FORCE LOCK if URL is clean
+    if not unlocked or qp.get("locked") != ["0"]:
         st.set_page_config(
             page_title="Bayut & Dubizzle – Access Required",
             layout="centered"
@@ -30,18 +37,20 @@ if REQUIRE_CODE:
         code = st.text_input(
             "Access code",
             type="password",
-            label_visibility="collapsed",
-            placeholder="Enter access code"
+            placeholder="Enter access code",
+            label_visibility="collapsed"
         )
 
         if st.button("Unlock"):
             if code == ACCESS_CODE:
-                st.session_state["unlock_hash"] = expected_hash
+                st.session_state["unlock_hash"] = expected
+                st.experimental_set_query_params(locked="0")
                 st.rerun()
             else:
                 st.error("Wrong access code")
 
         st.stop()
+
 
 # ===============================
 # PAGE CONFIG (MAIN APP)
