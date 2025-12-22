@@ -6,10 +6,7 @@ import streamlit as st
 from langchain_community.vectorstores import FAISS
 from langchain_community.document_loaders import TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-
-# 🔑 LOCAL embeddings (NO OpenAI, NO rate limits)
 from langchain_community.embeddings import HuggingFaceEmbeddings
-
 from langchain_openai import ChatOpenAI
 
 # ===============================
@@ -41,7 +38,7 @@ with st.sidebar:
     tool_mode = st.radio("", ["General", "Bayut", "Dubizzle"], index=0)
 
     st.markdown(" ")
-    answer_mode = st.radio("Answer mode", ["Ultra-Fast", "Thinking"], index=0)
+    answer_mode = st.radio("Answer mode", ["Short", "Detailed"], index=0)
 
     st.markdown(" ")
     if st.button("Rebuild Index"):
@@ -66,7 +63,7 @@ st.markdown(
 )
 
 # ===============================
-# LOCAL EMBEDDINGS (FINAL FIX)
+# EMBEDDINGS (LOCAL — NO RATE LIMIT)
 # ===============================
 @st.cache_resource
 def get_embeddings():
@@ -74,12 +71,18 @@ def get_embeddings():
         model_name="sentence-transformers/all-MiniLM-L6-v2"
     )
 
+# ===============================
+# LLM
+# ===============================
 @st.cache_resource
 def get_llm():
-    return ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    return ChatOpenAI(
+        model="gpt-4o-mini",
+        temperature=0
+    )
 
 # ===============================
-# BUILD / LOAD INDEX (FAST, SAFE)
+# BUILD / LOAD INDEX
 # ===============================
 @st.cache_resource
 def load_index_once():
@@ -116,52 +119,78 @@ def load_index_once():
 index = load_index_once()
 
 # ===============================
-# SMART QUERY CLEANING
+# QUESTION INTENT DETECTION
 # ===============================
-def expand_query(q: str) -> str:
-    x = q.strip()
-    x = re.sub(r"\blunch\b", "launch", x, flags=re.IGNORECASE)
-    x = re.sub(r"\bcampains\b", "campaigns", x, flags=re.IGNORECASE)
-    x = re.sub(r"\bpm\b", "paid marketing", x, flags=re.IGNORECASE)
-    return x
+def is_definition_question(q: str) -> bool:
+    q = q.lower().strip()
+    return q.startswith("what is") or q.startswith("what are") or q.startswith("define")
 
-# ===============================
-# SMALL TALK
-# ===============================
-def is_greeting(q: str):
+def wants_process(q: str) -> bool:
+    q = q.lower()
+    keywords = ["how", "steps", "process", "workflow", "sop", "procedure"]
+    return any(k in q for k in keywords)
+
+def is_greeting(q: str) -> bool:
     return q.lower() in {"hi", "hello", "hey", "مرحبا", "اهلا"}
 
-def is_app_question(q: str):
-    return "what is this" in q.lower() or "what does this app" in q.lower()
+def is_app_question(q: str) -> bool:
+    return "what is this app" in q.lower() or "what does this app do" in q.lower()
 
-def app_description():
-    return (
-        "This is an internal AI assistant for Bayut & Dubizzle.\n\n"
-        "It searches internal SOPs and answers questions naturally.\n\n"
-        "Examples:\n"
-        "- When do PM campaigns launch?\n"
-        "- What’s the SOP for newsletters?"
-    )
+# ===============================
+# PROMPT BUILDER (THE FIX)
+# ===============================
+def build_prompt(question: str, context: str, mode: str) -> str:
+    if is_definition_question(question) and not wants_process(question):
+        return f"""
+You are an internal assistant.
+
+Give a CLEAR, SHORT definition in 1–3 sentences.
+Do NOT list steps.
+Do NOT describe workflows.
+Do NOT mention tools unless necessary.
+
+Context:
+{context}
+
+Question:
+{question}
+"""
+
+    if mode == "Short":
+        return f"""
+Answer briefly and clearly.
+Summarize in plain language.
+Avoid SOP-style details unless explicitly requested.
+
+Context:
+{context}
+
+Question:
+{question}
+"""
+
+    # Detailed
+    return f"""
+You are an internal SOP assistant.
+
+Explain clearly and in a structured way.
+Include steps only if relevant.
+Be practical, not verbose.
+
+Context:
+{context}
+
+Question:
+{question}
+"""
 
 # ===============================
 # ANSWERING
 # ===============================
-def extractive_answer(q, docs):
-    text = "\n".join(d.page_content for d in docs)
-    sentences = re.split(r"(?<=[.!?])\s+", text)
-    q_words = set(re.findall(r"\w+", q.lower()))
-    ranked = sorted(
-        sentences,
-        key=lambda s: len(q_words & set(re.findall(r"\w+", s.lower()))),
-        reverse=True
-    )
-    return " ".join(ranked[:4])
-
-def thinking_answer(q, docs):
-    ctx = "\n\n".join(d.page_content for d in docs)[:2500]
-    return get_llm().invoke(
-        f"Context:\n{ctx}\n\nQuestion:\n{q}"
-    ).content.strip()
+def answer_question(q: str, docs, mode: str):
+    context = "\n\n".join(d.page_content for d in docs)[:3000]
+    prompt = build_prompt(q, context, mode)
+    return get_llm().invoke(prompt).content.strip()
 
 # ===============================
 # UI
@@ -192,17 +221,14 @@ if ask:
 
     if is_app_question(q_clean):
         st.session_state.last_q = q_clean
-        st.session_state.last_a = app_description()
+        st.session_state.last_a = (
+            "This is an internal AI assistant for Bayut & Dubizzle. "
+            "It answers questions based on internal SOPs and guidelines."
+        )
         st.rerun()
 
-    search_q = expand_query(q_clean)
-    docs = index.similarity_search(search_q, k=4)
-
-    ans = (
-        extractive_answer(q_clean, docs)
-        if answer_mode == "Ultra-Fast"
-        else thinking_answer(q_clean, docs)
-    )
+    docs = index.similarity_search(q_clean, k=4)
+    ans = answer_question(q_clean, docs, answer_mode)
 
     st.session_state.last_q = q_clean
     st.session_state.last_a = ans
