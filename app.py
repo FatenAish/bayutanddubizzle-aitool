@@ -328,8 +328,10 @@ def load_qa_index(mode: str):
     if not docs:
         return None
 
-    emb = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-    return FAISS.from_documents(docs, emb)
+   HuggingFaceEmbeddings(
+    model_name="sentence-transformers/all-MiniLM-L6-v2",
+    cache_folder="/models"
+)
 
 @st.cache_resource
 def load_sop_index(mode: str):
