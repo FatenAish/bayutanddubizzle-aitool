@@ -144,7 +144,6 @@ def get_embeddings():
 # ===============================
 # 🔥 BUILD FAISS INDEX FROM /data
 # ===============================
-@st.cache_resource
 def build_index():
     if not os.path.isdir(DATA_DIR):
         raise RuntimeError("❌ /data folder not found")
