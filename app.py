@@ -22,18 +22,26 @@ st.set_page_config(
 # ===============================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
-INDEX_PATH = "/tmp/faiss_index"
+TMP_DIR = "/tmp"
 
 # ===============================
-# SESSION STATE (CHATGPT-STYLE MEMORY)
+# SESSION STATE
 # ===============================
-st.session_state.setdefault("chat", [])     # full chat
-st.session_state.setdefault("topic", "")    # running topic
+st.session_state.setdefault("chat", [])
+st.session_state.setdefault("topic", "")
 
 # ===============================
 # SIDEBAR
 # ===============================
 with st.sidebar:
+    st.header("Tool")
+    tool_mode = st.radio(
+        "",
+        ["General", "Bayut", "Dubizzle"],
+        index=0
+    )
+
+    st.markdown(" ")
     st.header("Answer mode")
     answer_mode = st.radio(
         "",
@@ -43,10 +51,9 @@ with st.sidebar:
 
     st.markdown(" ")
     if st.button("Rebuild Index"):
-        if os.path.exists(INDEX_PATH):
-            shutil.rmtree(INDEX_PATH, ignore_errors=True)
+        shutil.rmtree(TMP_DIR, ignore_errors=True)
         st.cache_resource.clear()
-        st.success("Index cleared. It will rebuild once.")
+        st.success("Indexes cleared. They will rebuild automatically.")
 
 # ===============================
 # TITLE
@@ -64,7 +71,7 @@ st.markdown(
 )
 
 # ===============================
-# EMBEDDINGS (LOCAL, FAST, STABLE)
+# EMBEDDINGS
 # ===============================
 @st.cache_resource
 def get_embeddings():
@@ -73,32 +80,43 @@ def get_embeddings():
     )
 
 # ===============================
-# LLM (REASONING ONLY)
+# LLM (THINKING ONLY)
 # ===============================
 @st.cache_resource
 def get_llm():
-    return ChatOpenAI(
-        model="gpt-4o-mini",
-        temperature=0
-    )
+    return ChatOpenAI(model="gpt-4o-mini", temperature=0)
 
 # ===============================
-# LOAD / BUILD INDEX (ONCE)
+# FILE ROUTING
+# ===============================
+def file_allowed(filename: str, mode: str) -> bool:
+    f = filename.lower()
+    if mode == "General":
+        return True
+    if mode == "Bayut":
+        return f.startswith("bayut") or f.startswith("both")
+    if mode == "Dubizzle":
+        return f.startswith("dubizzle") or f.startswith("both")
+    return True
+
+# ===============================
+# INDEX PER TOOL
 # ===============================
 @st.cache_resource
-def load_index():
+def load_index(mode: str):
+    index_path = os.path.join(TMP_DIR, f"faiss_{mode.lower()}")
     embeddings = get_embeddings()
 
-    if os.path.exists(INDEX_PATH):
+    if os.path.exists(index_path):
         return FAISS.load_local(
-            INDEX_PATH,
+            index_path,
             embeddings,
             allow_dangerous_deserialization=True
         )
 
     docs = []
     for f in os.listdir(DATA_DIR):
-        if f.lower().endswith(".txt"):
+        if f.endswith(".txt") and file_allowed(f, mode):
             docs.extend(
                 TextLoader(os.path.join(DATA_DIR, f), encoding="utf-8").load()
             )
@@ -110,13 +128,38 @@ def load_index():
     chunks = splitter.split_documents(docs)
 
     index = FAISS.from_documents(chunks, embeddings)
-    index.save_local(INDEX_PATH)
+    index.save_local(index_path)
     return index
 
-index = load_index()
+index = load_index(tool_mode)
 
 # ===============================
-# HELPERS
+# INTENT DETECTION (THE FIX)
+# ===============================
+def is_tool_question(q: str) -> bool:
+    q = q.lower().strip()
+    triggers = [
+        "what is this tool",
+        "what is this app",
+        "what are you",
+        "who are you",
+        "what can you do",
+        "what is bayut & dubizzle ai content assistant",
+        "what is bayut and dubizzle ai content assistant",
+    ]
+    return any(t in q for t in triggers)
+
+def tool_description() -> str:
+    return (
+        "The Bayut & Dubizzle AI Content Assistant is an internal tool that helps "
+        "content, marketing, and operations teams quickly find answers from "
+        "approved SOPs, guidelines, and internal documentation.\n\n"
+        "It supports Bayut, Dubizzle, or both, and can answer questions naturally "
+        "without needing to search documents manually."
+    )
+
+# ===============================
+# CONTEXT LOGIC
 # ===============================
 def clean_query(q: str) -> str:
     q = re.sub(r"\blunch\b", "launch", q, flags=re.IGNORECASE)
@@ -124,32 +167,17 @@ def clean_query(q: str) -> str:
     q = re.sub(r"\bpm\b", "paid marketing", q, flags=re.IGNORECASE)
     return q.strip()
 
-def is_greeting(q: str):
-    return q.lower() in {"hi", "hello", "hey", "مرحبا", "اهلا"}
-
-def is_app_question(q: str):
-    return "what is this app" in q.lower() or "what does this app do" in q.lower()
-
-# ===============================
-# 🔑 CHATGPT-STYLE TOPIC MANAGER (THE FIX)
-# ===============================
-def update_topic(current_topic: str, question: str) -> str:
-    q = question.lower().strip()
-
-    # new topic introducers → reset topic
+def update_topic(current: str, question: str) -> str:
+    q = question.lower()
     if q.startswith(("what is", "what are", "define", "explain")):
         return question
-
-    # otherwise keep topic
-    return current_topic or question
+    return current or question
 
 def resolve_query(topic: str, question: str) -> str:
-    if topic:
-        return f"{topic}. Follow-up question: {question}"
-    return question
+    return f"{topic}. Follow-up question: {question}" if topic else question
 
 # ===============================
-# ULTRA-FAST (NO LLM)
+# ANSWERS
 # ===============================
 def ultra_fast_answer(q, docs):
     text = " ".join(d.page_content for d in docs)
@@ -161,21 +189,15 @@ def ultra_fast_answer(q, docs):
         key=lambda s: len(q_words & set(re.findall(r"\w+", s.lower()))),
         reverse=True
     )
-
     return " ".join(ranked[:2]).strip() or "I couldn’t find a clear answer."
 
-# ===============================
-# THINKING (REASONING, NOT CHATGPT TONE)
-# ===============================
 def thinking_answer(q, docs):
     llm = get_llm()
-
     context = "\n\n".join(d.page_content for d in docs)[:2000]
 
     prompt = f"""
 Answer clearly and directly.
-Stay on the current topic.
-Explain first; expand only if needed.
+Stay on topic.
 Do NOT dump SOPs unless asked.
 
 Context:
@@ -198,41 +220,25 @@ q = st.text_input("Question")
 if st.button("Ask"):
     q_clean = clean_query(q)
 
-    if not q_clean:
-        st.warning("Enter a question.")
+    # 🔴 HARD STOP — TOOL QUESTIONS NEVER SEARCH
+    if is_tool_question(q_clean):
+        ans = tool_description()
+        st.session_state.chat.append({"q": q_clean, "a": ans})
         st.stop()
 
-    if is_greeting(q_clean):
-        ans = "Hello 👋 How can I help you?"
-    elif is_app_question(q_clean):
-        ans = (
-            "This is an internal assistant for Bayut & Dubizzle. "
-            "It answers questions based on internal content and SOPs."
-        )
+    resolved = resolve_query(st.session_state.topic, q_clean)
+    docs = index.similarity_search(resolved, k=3)
+
+    if answer_mode == "Ultra-Fast":
+        ans = ultra_fast_answer(q_clean, docs)
     else:
-        # 🔑 CHATGPT-STYLE CONTEXT RESOLUTION
-        resolved_query = resolve_query(
-            st.session_state.topic,
-            q_clean
-        )
+        ans = thinking_answer(q_clean, docs)
 
-        docs = index.similarity_search(resolved_query, k=3)
-
-        if answer_mode == "Ultra-Fast":
-            ans = ultra_fast_answer(q_clean, docs)
-        else:
-            ans = thinking_answer(q_clean, docs)
-
-        # update topic AFTER answering
-        st.session_state.topic = update_topic(
-            st.session_state.topic,
-            q_clean
-        )
-
+    st.session_state.topic = update_topic(st.session_state.topic, q_clean)
     st.session_state.chat.append({"q": q_clean, "a": ans})
 
 # ===============================
-# DISPLAY CHAT HISTORY
+# CHAT HISTORY
 # ===============================
 for item in st.session_state.chat:
     st.markdown(
