@@ -16,11 +16,11 @@ st.set_page_config(
     layout="wide"
 )
 
-# ✅ UI polish: bold label, centered buttons, LESS space between buttons
+# ✅ UI: bold label + less space between buttons
 st.markdown(
     """
     <style>
-      div[data-testid="stHorizontalBlock"] { gap: 0.14rem; }   /* less space between buttons */
+      div[data-testid="stHorizontalBlock"] { gap: 0.14rem; }
       button { white-space: nowrap !important; }
       .ask-label { font-weight: 800; margin-bottom: 6px; }
     </style>
@@ -46,12 +46,6 @@ st.session_state.setdefault("chat", {
 # ===============================
 # HELPERS
 # ===============================
-def safe_columns(spec, gap="small"):
-    try:
-        return st.columns(spec, gap=gap)
-    except TypeError:
-        return st.columns(spec)
-
 def read_text(fp: str) -> str:
     try:
         with open(fp, "r", encoding="utf-8") as f:
@@ -77,36 +71,23 @@ def bubble_style(mode: str) -> str:
     return "background:#F5F6F8;border:1px solid #E2E5EA;"
 
 def clean_answer(text: str) -> str:
-    """Clean citations/artifacts/control chars/bullets and remove embedded Q/A blocks."""
     if not text:
         return ""
 
-    # Remove private-use citation blocks
     text = re.sub(r"", "", text, flags=re.DOTALL)
     text = re.sub(r"", "", text, flags=re.DOTALL)
 
-    # Remove turnXfileY artifacts
     text = re.sub(r"turn\d+file\d+", "", text, flags=re.IGNORECASE)
     text = re.sub(r"turn\d+file\d+", "", text, flags=re.IGNORECASE)
-
-    # Remove filecite word even if surrounded by symbols
     text = re.sub(r"[^A-Za-z0-9]*filecite[^A-Za-z0-9]*", "", text, flags=re.IGNORECASE)
 
-    # Remove repeated Q:/A: tokens inside answers
     text = re.sub(r"\bQ:\s*", "", text)
     text = re.sub(r"\bA:\s*", "", text)
-
-    # Remove Q1) / Q2) style blocks if they leak into output
     text = re.sub(r"\bQ\d+\)\s*", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"\bA:\s*", "", text, flags=re.IGNORECASE)
 
-    # Remove asterisks bullets
     text = text.replace("*", " ")
-
-    # Strip control characters
     text = re.sub(r"[\x00-\x1F\x7F]", " ", text)
 
-    # Flatten bullets/dashes into one paragraph
     lines = []
     for line in text.splitlines():
         line = line.strip()
@@ -119,19 +100,12 @@ def clean_answer(text: str) -> str:
     return text
 
 # ===============================
-# FLEXIBLE Q/A PARSER (supports Q:/A: AND Q1)/A:)
+# FLEXIBLE Q/A PARSER (Q:/A: + Q1)/A:)
 # ===============================
 Q_LINE_RE = re.compile(r"^\s*Q(\d+)?\s*[\)\:\.\-]?\s*(.+?)\s*$", re.IGNORECASE)
 A_LINE_RE = re.compile(r"^\s*A\s*[\)\:\.\-]?\s*(.*)\s*$", re.IGNORECASE)
 
 def parse_qa_pairs_flexible(text: str):
-    """
-    Supports:
-    - Q: ... \n A: ...
-    - Q1) ... \n A: ...
-    - Q2) ... \n A: ...
-    Answers can span multiple lines until next Q.
-    """
     lines = text.splitlines()
     pairs = []
 
@@ -165,14 +139,12 @@ def parse_qa_pairs_flexible(text: str):
             continue
 
         if in_answer and cur_q:
-            # keep collecting answer until next Q
             cur_a_lines.append(line.rstrip())
 
     flush()
     return pairs
 
 def file_has_qa_pairs(text: str) -> bool:
-    # detect Q style
     return bool(re.search(r"^\s*Q(\d+)?\s*[\)\:\.]", text, flags=re.IGNORECASE | re.MULTILINE)) and \
            bool(re.search(r"^\s*A\s*[:\)\.]", text, flags=re.IGNORECASE | re.MULTILINE))
 
@@ -184,7 +156,7 @@ def is_listings_intent(q: str) -> bool:
     keys = [
         "listing", "listings", "wrong name", "wrong names", "correction", "correct",
         "update", "merge", "archive", "location", "algolia", "parent location",
-        "poc", "point of contact", "contact person", "channel handler", "chanel handler"
+        "channel handler", "chanel handler", "poc", "point of contact"
     ]
     return any(k in ql for k in keys)
 
@@ -204,11 +176,30 @@ def is_name_question(q: str) -> bool:
         "name?", "the name"
     ])
 
+# ✅ NEW: APP/TOOL OWNERSHIP INTENT
+def is_app_owner_question(q: str) -> bool:
+    ql = q.lower()
+    keys = [
+        "who is responsible for the app",
+        "who is resposible for the app",
+        "responsible for the app",
+        "who is responsible for this tool",
+        "who is resposible about this tool",
+        "who owns the app",
+        "app owner",
+        "tool owner",
+        "who maintains the app",
+        "who runs the app",
+        "who is responsible about this tool",
+    ]
+    return any(k in ql for k in keys)
+
 # ===============================
 # FILE SELECTION
 # ===============================
 MARKETING_BLOCK = ["pm", "campaign", "newsletter", "social", "paid", "performance", "design team"]
-LISTINGS_ALLOW = ["correction", "update", "listing", "listings", "location", "algolia", "projects", "project"]
+LISTINGS_ALLOW = ["correction", "update", "listing", "listings", "location", "algolia", "projects", "project", "corrections"]
+APP_ALLOW = ["assistant", "internal ai", "ai content assistant", "app", "tool", "onboarding", "faq", "help"]
 
 def list_txt_files():
     if not os.path.isdir(DATA_DIR):
@@ -216,6 +207,10 @@ def list_txt_files():
     return sorted([os.path.join(DATA_DIR, f) for f in os.listdir(DATA_DIR) if f.lower().endswith(".txt")])
 
 def mode_allows_file(mode: str, filename_lower: str) -> bool:
+    # ✅ Always allow “app/tool/assistant/faq” files in any mode
+    if any(k in filename_lower for k in APP_ALLOW):
+        return True
+
     is_bayut = filename_lower.startswith("bayut")
     is_dubizzle = filename_lower.startswith("dubizzle")
     is_both = filename_lower.startswith("both")
@@ -230,7 +225,6 @@ def mode_allows_file(mode: str, filename_lower: str) -> bool:
     return True
 
 def get_qa_files(mode: str):
-    """Files that contain Q/A pairs (supports Q1) / A: too)."""
     files = []
     for fp in list_txt_files():
         name = os.path.basename(fp).lower()
@@ -242,7 +236,6 @@ def get_qa_files(mode: str):
     return files
 
 def get_sop_files(mode: str):
-    """Plain SOP files without Q/A pairs."""
     files = []
     for fp in list_txt_files():
         name = os.path.basename(fp).lower()
@@ -288,10 +281,9 @@ def load_qa_index(mode: str):
     docs = []
     for fp in qa_files:
         raw = read_text(fp)
-        pairs = parse_qa_pairs_flexible(raw)
-        for q, a in pairs:
+        for q, a in parse_qa_pairs_flexible(raw):
             docs.append(Document(
-                page_content=q.strip(),  # embed only question
+                page_content=q.strip(),
                 metadata={"answer": a.strip(), "source_file": os.path.basename(fp).lower()}
             ))
 
@@ -329,9 +321,15 @@ def is_marketing_file(name_lower: str) -> bool:
 
 def is_listings_file(name_lower: str) -> bool:
     nl = (name_lower or "").lower()
-    return any(k in nl for k in LISTINGS_ALLOW) or nl.startswith("both") or ("corrections" in nl)
+    return any(k in nl for k in LISTINGS_ALLOW) or nl.startswith("both")
 
-def answer_from_qa(question: str, qa_index, answer_mode: str, history, force_listings_filter: bool = False):
+def is_app_file(name_lower: str) -> bool:
+    nl = (name_lower or "").lower()
+    return any(k in nl for k in APP_ALLOW)
+
+def answer_from_qa(question: str, qa_index, answer_mode: str, history,
+                   force_listings_filter: bool = False,
+                   force_app_filter: bool = False):
     if qa_index is None:
         return None
 
@@ -346,23 +344,31 @@ def answer_from_qa(question: str, qa_index, answer_mode: str, history, force_lis
         return None
 
     listings_scope = is_listings_intent(question) or force_listings_filter
+    app_scope = is_app_owner_question(question) or force_app_filter
 
     filtered = []
     for d in results:
         src = (d.metadata or {}).get("source_file", "")
-        if listings_scope:
-            # HARD BLOCK marketing/pm files
+
+        # ✅ APP scope: only allow app/assistant/faq files (block marketing completely)
+        if app_scope:
             if is_marketing_file(src):
                 continue
-            # ONLY listings-related files
+            if not is_app_file(src):
+                continue
+
+        # ✅ Listings scope: only allow listings/corrections files (block marketing completely)
+        if listings_scope:
+            if is_marketing_file(src):
+                continue
             if not is_listings_file(src):
                 continue
+
         filtered.append(d)
 
     if not filtered:
         return None
 
-    # pick best by overlap to avoid wrong pick
     best_doc = None
     best_score = -1
     for d in filtered:
@@ -386,7 +392,11 @@ def answer_from_sop_fallback(question: str, sop_index):
     return None
 
 def smart_answer(question: str, qa_index, sop_index, answer_mode: str, history):
-    # follow-up lock: if last questions were listings, keep vague follow-ups inside listings
+    # ✅ Hard override: app ownership ALWAYS returns correct answer
+    if is_app_owner_question(question):
+        return "Faten Aish and Sarah Al Nawah."
+
+    # follow-up lock: listings thread
     recent_qs = " ".join([h.get("q", "") for h in (history[-3:] if history else [])]).lower()
     followup_to_listings = is_listings_intent(recent_qs) and (
         is_name_question(question) or is_poc_question(question) or is_channel_handler_question(question) or
@@ -396,20 +406,22 @@ def smart_answer(question: str, qa_index, sop_index, answer_mode: str, history):
     listings_scope = is_listings_intent(question) or followup_to_listings
 
     if listings_scope:
-        # ✅ IMPORTANT: QA FIRST (so you get exact POCs + exact Channel Handler name)
         a = answer_from_qa(question, qa_index, answer_mode, history, force_listings_filter=True)
         if a:
             return a
-
-        # fallback: SOP chunk
         b = answer_from_sop_fallback(question, sop_index)
         if b:
             return b
-
         return "I couldn’t find a clear answer to that."
 
-    # non-listings normal QA
-    a = answer_from_qa(question, qa_index, answer_mode, history, force_listings_filter=False)
+    # ✅ App/tool general questions (non-owner): search only app/faq files first
+    if "assistant" in question.lower() or "tool" in question.lower() or "app" in question.lower():
+        a = answer_from_qa(question, qa_index, answer_mode, history, force_app_filter=True)
+        if a:
+            return a
+
+    # normal QA
+    a = answer_from_qa(question, qa_index, answer_mode, history)
     if a:
         return a
 
@@ -460,7 +472,6 @@ with st.form("ask_form", clear_on_submit=True):
     st.markdown('<div class="ask-label">Ask a question</div>', unsafe_allow_html=True)
     q = st.text_input("", placeholder="Type your question here...")
 
-    # centered + closer buttons
     left, mid, right = st.columns([4, 2.3, 4])
     with mid:
         b1, b2 = st.columns([1, 1], gap="small")
@@ -499,7 +510,7 @@ if ask and q.strip():
 # CHAT HISTORY (NEWEST ON TOP)
 # ===============================
 style = bubble_style(tool_mode)
-items = list(enumerate(st.session_state.chat[tool_mode]))[::-1]  # newest first
+items = list(enumerate(st.session_state.chat[tool_mode]))[::-1]
 
 for orig_idx, item in items:
     q_txt = html.escape(item.get("q", ""))
