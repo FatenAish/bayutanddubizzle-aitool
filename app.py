@@ -18,25 +18,39 @@ st.set_page_config(
 )
 
 # ===============================
-# UI CSS
+# UI CSS (CENTERED QUESTION BOX + SMALLER MODE TITLE)
 # ===============================
 st.markdown(
     """
     <style>
-      div[data-testid="stHorizontalBlock"] { gap: 0.12rem; }  /* less space between buttons */
+      div[data-testid="stHorizontalBlock"] { gap: 0.12rem; }
       button { white-space: nowrap !important; }
 
-      /* Make the input area look cleaner */
-      [data-testid="stForm"] {
+      /* Mode titles smaller (~17px) */
+      .mode-title {
+        font-size: 17px !important;
+        font-weight: 700 !important;
+        margin-top: 8px !important;
+        margin-bottom: 10px !important;
+      }
+
+      /* Center question form and add space above */
+      .question-wrap {
+        max-width: 980px;
+        margin: 28px auto 10px auto;  /* top space + centered */
+      }
+
+      .question-wrap [data-testid="stForm"] {
         border: 1px solid #E7E9EE;
         border-radius: 12px;
-        padding: 16px 16px 10px 16px;
+        padding: 18px 18px 12px 18px;
         background: #fff;
       }
-      /* reduce extra spacing above input */
-      div[data-testid="stTextInput"] > label { display:none; }
 
-      /* slightly nicer separator */
+      /* Hide default label for text_input */
+      .question-wrap div[data-testid="stTextInput"] > label { display:none; }
+
+      /* Nicer separator */
       hr { margin: 14px 0; }
     </style>
     """,
@@ -59,7 +73,6 @@ if "chat" not in st.session_state or not isinstance(st.session_state.chat, dict)
 if "dubizzle" in st.session_state.chat and "Dubizzle" not in st.session_state.chat:
     st.session_state.chat["Dubizzle"] = st.session_state.chat.pop("dubizzle")
 
-# ensure required keys exist
 st.session_state.chat.setdefault("General", [])
 st.session_state.chat.setdefault("Bayut", [])
 st.session_state.chat.setdefault("Dubizzle", [])
@@ -67,7 +80,7 @@ st.session_state.chat.setdefault("Dubizzle", [])
 # ===============================
 # CONSTANTS
 # ===============================
-THINKING_DELAY_SECONDS = 1.2  # make Thinking mode slower (increase if you want)
+THINKING_DELAY_SECONDS = 1.2  # increase if you want slower Thinking mode
 
 # ===============================
 # HELPERS
@@ -110,6 +123,7 @@ def clean_answer(text: str) -> str:
     text = re.sub(r"\bQ:\s*", "", text)
     text = re.sub(r"\bA:\s*", "", text)
     text = re.sub(r"\bQ\d+\)\s*", "", text, flags=re.IGNORECASE)
+
     text = text.replace("*", " ")
     text = re.sub(r"[\x00-\x1F\x7F]", " ", text)
 
@@ -231,7 +245,6 @@ def list_txt_files():
     return sorted([os.path.join(DATA_DIR, f) for f in os.listdir(DATA_DIR) if f.lower().endswith(".txt")])
 
 def mode_allows_file(mode: str, filename_lower: str) -> bool:
-    # Always allow app/tool/assistant/faq files in any mode
     if any(k in filename_lower for k in APP_ALLOW):
         return True
 
@@ -419,17 +432,12 @@ def enhance_for_thinking(answer: str) -> str:
         return a
     if len(a.split()) >= 60:
         return a
-    return (
-        f"{a}\n\n"
-        "If you want more detail, ask: “step-by-step” or “give me the checklist”."
-    )
+    return f"{a}\n\nIf you want more detail, ask: “step-by-step” or “give me the checklist”."
 
 def smart_answer(question: str, qa_index, sop_index, answer_mode: str, history):
-    # hard override
     if is_app_owner_question(question):
         return "Faten Aish and Sarah Al Nawah."
 
-    # follow-up lock: listings thread
     recent_qs = " ".join([h.get("q", "") for h in (history[-3:] if history else [])]).lower()
     followup_to_listings = is_listings_intent(recent_qs) and (
         is_name_question(question) or is_poc_question(question) or is_channel_handler_question(question) or
@@ -471,7 +479,6 @@ with st.sidebar:
     st.markdown("---")
     answer_mode = st.radio("Answer mode", ["Ultra-Fast", "Thinking"], index=0)
 
-# Always use safe chat key
 chat_key = tool_mode
 st.session_state.chat.setdefault(chat_key, [])
 
@@ -491,24 +498,26 @@ st.markdown(
 )
 
 # ===============================
-# TOOL HEADING (colored brand word)
+# MODE TITLE (SMALLER)
 # ===============================
 if tool_mode == "Bayut":
     st.markdown(
-        '<h2 style="margin-top:6px;">Ask <span style="color:#0E8A6D;font-weight:800;">Bayut</span> Anything</h2>',
+        '<div class="mode-title">Ask <span style="color:#0E8A6D;font-weight:800;">Bayut</span> Anything</div>',
         unsafe_allow_html=True
     )
 elif tool_mode == "Dubizzle":
     st.markdown(
-        '<h2 style="margin-top:6px;">Ask <span style="color:#D71920;font-weight:800;">Dubizzle</span> Anything</h2>',
+        '<div class="mode-title">Ask <span style="color:#D71920;font-weight:800;">Dubizzle</span> Anything</div>',
         unsafe_allow_html=True
     )
 else:
-    st.markdown('<h2 style="margin-top:6px;">General Assistant</h2>', unsafe_allow_html=True)
+    st.markdown('<div class="mode-title">General Assistant</div>', unsafe_allow_html=True)
 
 # ===============================
-# QUESTION UI (NO "Ask me Anything!")
+# QUESTION UI (CENTERED + SPACE ABOVE)
 # ===============================
+st.markdown('<div class="question-wrap">', unsafe_allow_html=True)
+
 with st.form("ask_form", clear_on_submit=True):
     q = st.text_input("", placeholder="Type your question here...")
 
@@ -517,6 +526,8 @@ with st.form("ask_form", clear_on_submit=True):
         b1, b2 = st.columns([1, 1], gap="small")
         ask = b1.form_submit_button("Ask")
         clear = b2.form_submit_button("Clear chat")
+
+st.markdown("</div>", unsafe_allow_html=True)
 
 # ===============================
 # CLEAR CHAT
@@ -531,7 +542,6 @@ if clear:
 if ask and q.strip():
     history = st.session_state.chat.get(chat_key, [])
 
-    # Thinking spinner like ChatGPT
     if answer_mode == "Thinking":
         with st.spinner("Thinking..."):
             if is_download_sop_request(q):
@@ -552,8 +562,6 @@ if ask and q.strip():
 
             st.session_state.chat[chat_key].append({"q": q, "a": answer})
             st.rerun()
-
-    # Ultra-fast (no spinner)
     else:
         if is_download_sop_request(q):
             files = pick_sop_files_for_download(chat_key, q)
