@@ -1,0 +1,90 @@
+Bayut & dubizzle — Corrections and Updates for Listings and Projects (Q&A)
+Q1) What does this SOP cover?
+
+A:
+
+Verify and correct data related to property listings, developers, and projects across both Bayut and dubizzle platforms.
+
+Ensure all updates are factually accurate, aligned with brand guidelines, and consistent across English and Arabic versions.
+
+Facilitate smooth communication and coordination with the Operations Team for technical updates or backend changes.
+
+Maintain documentation and tracking of all edits, requests, and resolutions.
+
+Q2) How does the Content Team submit correction requests?
+
+A: Through the established Slack channel, including supporting details such as URLs, screenshots, or references for each request.
+
+Q3) What must be included in each correction request?
+
+A:
+
+Link to listing or project
+
+Description of the issue
+
+Required correction (English / Arabic)
+
+Source or reference (official website, Bayut database, etc.)
+
+Q4) What does the Content Team need to validate before submitting?
+
+A: Factual accuracy such as developer names, locations, payment plans, handover dates, etc.
+
+Q5) What does the Operations Team do?
+
+A:
+
+Execute approved corrections and updates within the backend system.
+
+Ensure data synchronization across English and Arabic listings.
+
+Notify the Content Team once the update is completed for verification.
+
+Q6) Who is the Channel Handler (Coordination Lead) and what do they do?
+
+A: Faten Aish is the Channel Handler. They:
+
+Serve as the main liaison between the Content and Operations teams.
+
+Review incoming requests to ensure completeness and accuracy before escalation.
+
+Track all requests, monitor progress, and follow up on pending actions.
+
+Maintain an updated log of completed, ongoing, and rejected requests.
+
+Q7) What happens during the request submission step?
+
+A: Content teams share names, listings, or locations requiring edits through the shared channel.
+
+Q8) What happens during the initial review step?
+
+A: The channel handler reviews requests for completeness and verifies data before sending to Operations. Incomplete or unclear requests are returned for clarification.
+
+Q9) What happens during Operations implementation?
+
+A: Operations updates the listings, project details, or metadata based on the approved correction request.
+
+Q10) What happens during QA?
+
+A: After updates are completed, the channel handler verifies the changes live on the platform. If discrepancies persist, a follow-up correction request is submitted.
+
+Q11) How are requests closed and tracked?
+
+A: Each completed request is logged in the tracking sheet with timestamps and status. Periodic audits are conducted to ensure data remains accurate and consistent.
+
+Q12) Who are the points of contact (POCs)?
+
+A:
+
+Content (AR): Faten Aish — Arabic Content Corrections / Channel Handler
+
+Operations: Safieeldeen — Implementation & Verification
+
+Q13) How often are corrections handled and how long do they take?
+
+A:
+
+Corrections processed per week/month: Varies daily
+
+Average resolution time per request: 10–15 minutes to check the data and send the request; longer for complicated issues
