@@ -1,3 +1,22 @@
+import os
+import streamlit as st
+
+REQUIRE_CODE = os.getenv("REQUIRE_CODE", "0") == "1"
+ACCESS_CODE = os.getenv("ACCESS_CODE", "")
+
+if REQUIRE_CODE:
+    st.session_state.setdefault("unlocked", False)
+
+    if not st.session_state.unlocked:
+        st.title("Bayut & dubizzle Internal AI Assistant")
+        code = st.text_input("Access code", type="password")
+        if st.button("Unlock"):
+            if code and ACCESS_CODE and code == ACCESS_CODE:
+                st.session_state.unlocked = True
+                st.rerun()
+            else:
+                st.error("Wrong code.")
+        st.stop()
 cat > app.py << 'EOF'
 import os
 import re
