@@ -1,58 +1,47 @@
 import os
 import streamlit as st
+import hashlib
 
-# =====================================================
-# 🔐 HARD ACCESS GATE — ABSOLUTELY FIRST
-# =====================================================
-REQUIRE_CODE = os.environ.get("REQUIRE_CODE") == "1"
-ACCESS_CODE = os.environ.get("ACCESS_CODE", "")
+ACCESS_CODE = os.getenv("ACCESS_CODE", "")
+REQUIRE_CODE = os.getenv("REQUIRE_CODE", "0") == "1"
 
-# Force session init
-if "unlocked" not in st.session_state:
-    st.session_state["unlocked"] = False
+def _code_hash(code: str) -> str:
+    return hashlib.sha256(code.encode()).hexdigest()
 
-if REQUIRE_CODE and not st.session_state["unlocked"]:
-    st.set_page_config(
-        page_title="Bayut & Dubizzle – Access Required",
-        layout="centered"
-    )
+if REQUIRE_CODE:
+    expected_hash = _code_hash(ACCESS_CODE)
 
-    st.markdown(
-        """
-        <div style="
-            max-width:420px;
-            margin:120px auto;
-            text-align:center;
-            padding:26px 22px;
-            border:1px solid #E7E9EE;
-            border-radius:14px;
-            background:#fff;
-            box-shadow:0 6px 18px rgba(0,0,0,0.05);
-        ">
-          <h2>
-            <span style="color:#0E8A6D;">Bayut</span> &
-            <span style="color:#D71920;">Dubizzle</span>
-          </h2>
-          <p style="color:#666;margin-bottom:16px;">Internal AI Assistant</p>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+    if st.session_state.get("unlock_hash") != expected_hash:
+        st.set_page_config(
+            page_title="Bayut & Dubizzle – Access Required",
+            layout="centered"
+        )
 
-    code = st.text_input(
-        "",
-        type="password",
-        placeholder="Enter access code"
-    )
+        st.markdown(
+            """
+            <div style="max-width:420px;margin:120px auto;text-align:center;">
+              <h2>Bayut & Dubizzle</h2>
+              <p style="color:#666;">Internal AI Assistant</p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
-    if st.button("Unlock"):
-        if ACCESS_CODE and code == ACCESS_CODE:
-            st.session_state["unlocked"] = True
-            st.experimental_rerun()
-        else:
-            st.error("Wrong access code")
+        code = st.text_input(
+            "Access code",
+            type="password",
+            label_visibility="collapsed",
+            placeholder="Enter access code"
+        )
 
-    st.stop()
+        if st.button("Unlock"):
+            if code == ACCESS_CODE:
+                st.session_state["unlock_hash"] = expected_hash
+                st.rerun()
+            else:
+                st.error("Wrong access code")
+
+        st.stop()
 
 # ===============================
 # PAGE CONFIG (MAIN APP)
