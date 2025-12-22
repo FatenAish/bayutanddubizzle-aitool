@@ -16,12 +16,21 @@ st.set_page_config(
     layout="wide"
 )
 
-# ✅ Fix button wrapping + keep small gap (natural look)
+# ✅ UI polish: bold label, center buttons, reduce gap
 st.markdown(
     """
     <style>
-      div[data-testid="stHorizontalBlock"] { gap: 0.4rem; }
-      button { white-space: nowrap !important; }  /* prevents A\ns\nk */
+      /* tighter horizontal spacing between columns (buttons closer) */
+      div[data-testid="stHorizontalBlock"] { gap: 0.35rem; }
+
+      /* prevent button text wrapping */
+      button { white-space: nowrap !important; }
+
+      /* make form label bold (we use our own label) */
+      .ask-label { font-weight: 800; margin-bottom: 6px; }
+
+      /* slightly reduce vertical spacing between input + buttons */
+      div[data-testid="stForm"] { padding-top: 0.25rem; }
     </style>
     """,
     unsafe_allow_html=True
@@ -72,6 +81,11 @@ def is_listings_intent(q: str) -> bool:
     ]
     return any(k in ql for k in keys)
 
+def is_channel_handler_question(q: str) -> bool:
+    ql = q.lower()
+    # common misspellings included
+    return ("channel handler" in ql) or ("chanel handler" in ql) or ("channelhand" in ql)
+
 def is_download_sop_request(question: str) -> bool:
     q = question.lower().strip()
     return (("download" in q) or ("dl" in q) or ("get" in q)) and (("sop" in q) or ("sops" in q))
@@ -84,13 +98,7 @@ def bubble_style(mode: str) -> str:
     return "background:#F5F6F8;border:1px solid #E2E5EA;"
 
 def clean_answer(text: str) -> str:
-    """
-    ✅ Natural output cleanup:
-    - removes citations + turnXfileY artifacts
-    - removes control chars
-    - removes bullets and asterisks
-    - returns clean paragraph(s)
-    """
+    """Aggressive cleanup: removes citations/artifacts/control chars/bullets; returns natural text."""
     if not text:
         return ""
 
@@ -102,14 +110,14 @@ def clean_answer(text: str) -> str:
     text = re.sub(r"turn\d+file\d+", "", text, flags=re.IGNORECASE)
     text = re.sub(r"turn\d+file\d+", "", text, flags=re.IGNORECASE)
 
-    # Remove filecite word even if surrounded by weird symbols
+    # Remove filecite word even if surrounded by symbols
     text = re.sub(r"[^A-Za-z0-9]*filecite[^A-Za-z0-9]*", "", text, flags=re.IGNORECASE)
 
-    # Remove repeated Q:/A: tokens inside answers
+    # Remove repeated Q:/A:
     text = re.sub(r"\bQ:\s*", "", text)
     text = re.sub(r"\bA:\s*", "", text)
 
-    # Remove asterisks bullets like "* Verify ..."
+    # Remove asterisks bullets
     text = text.replace("*", " ")
 
     # Strip control characters
@@ -128,7 +136,7 @@ def clean_answer(text: str) -> str:
     return text
 
 # ===============================
-# Q/A PARSER (only when file contains Q:/A:)
+# Q/A PARSER
 # ===============================
 QA_PAIR_RE = re.compile(
     r"(?:^|\n)Q:\s*(.*?)\nA:\s*([\s\S]*?)(?=\nQ:\s*|\Z)",
@@ -170,7 +178,6 @@ def mode_allows_file(mode: str, filename_lower: str) -> bool:
     return True
 
 def get_qa_files(mode: str):
-    """Files that actually contain Q:/A: pairs (regardless of filename)."""
     files = []
     for fp in list_txt_files():
         name = os.path.basename(fp).lower()
@@ -182,7 +189,6 @@ def get_qa_files(mode: str):
     return files
 
 def get_sop_files(mode: str):
-    """Plain SOP files without Q/A (includes Both Corrections...txt)."""
     files = []
     for fp in list_txt_files():
         name = os.path.basename(fp).lower()
@@ -265,7 +271,7 @@ def load_sop_index(mode: str):
     return FAISS.from_documents(docs, emb)
 
 # ===============================
-# ANSWERING (FIXED ROUTER + NATURAL LISTINGS OUTPUT)
+# ANSWERING
 # ===============================
 def is_marketing_file(name_lower: str) -> bool:
     nl = (name_lower or "").lower()
@@ -280,11 +286,7 @@ def extract_sentences(text: str):
     return [p.strip() for p in parts if p.strip()]
 
 def answer_from_sop_listings_first(question: str, sop_index):
-    """
-    ✅ Listings intent:
-    - only look at BOTH/listings/corrections files
-    - return a clean, natural 1–2 sentence answer (not raw bullets)
-    """
+    """Listings intent → ONLY listings/corrections SOP chunks → natural output."""
     if sop_index is None:
         return None
 
@@ -303,33 +305,39 @@ def answer_from_sop_listings_first(question: str, sop_index):
     if not filtered:
         return None
 
-    # Build a small evidence text from top chunks
+    # ✅ Special-case: channel handler definition (natural, never marketing)
+    if is_channel_handler_question(question):
+        return ("The Channel Handler (Coordination Lead) reviews the correction request, coordinates it with Operations, "
+                "and verifies the change live on the platform after it’s updated.")
+
+    # Natural workflow answer
     evidence = " ".join((d.page_content or "") for d in filtered[:3])
     ev = clean_answer(evidence).lower()
 
+    submit = any(k in ev for k in ["submit", "request", "content team", "content teams"])
     ops = "operations" in ev
     handler = ("channel handler" in ev) or ("coordination" in ev)
-    submit = ("submit" in ev) or ("request" in ev) or ("content team" in ev) or ("content teams" in ev)
 
-    # Natural answer templates
     if submit and ops and handler:
         return ("The Content team submits the correction request, Operations updates the listing data once it’s approved, "
                 "and the Channel Handler verifies the change live on the platform.")
+
     if ops and handler:
-        return ("Operations updates the listing data after approval, and the Channel Handler verifies the change live on the platform.")
+        return "Operations updates the listing data after approval, and the Channel Handler verifies the change live on the platform."
+
     if ops:
         return "Operations updates the listing data after the correction is approved."
+
     if handler:
         return "The Channel Handler verifies the change live on the platform after it’s updated."
 
-    # Fallback: pick best 2 sentences
+    # fallback: best sentences
     cand = []
     for d in filtered[:4]:
         for s in extract_sentences(d.page_content or ""):
             ov = keyword_overlap(question, s)
             role_push = 1 if any(w in s.lower() for w in ["operations", "coordination", "channel handler", "verify", "submit", "request", "backend"]) else 0
             cand.append((ov + role_push, s))
-
     cand.sort(key=lambda x: x[0], reverse=True)
     best = [c[1] for c in cand[:2] if c[0] > 0]
     if best:
@@ -337,7 +345,7 @@ def answer_from_sop_listings_first(question: str, sop_index):
 
     return clean_answer(filtered[0].page_content)[:350]
 
-def answer_from_qa(question: str, qa_index, answer_mode: str, history):
+def answer_from_qa(question: str, qa_index, answer_mode: str, history, force_listings_filter: bool = False):
     if qa_index is None:
         return None
 
@@ -351,7 +359,7 @@ def answer_from_qa(question: str, qa_index, answer_mode: str, history):
     if not results:
         return None
 
-    listings_intent = is_listings_intent(question)
+    listings_intent = is_listings_intent(question) or force_listings_filter
 
     filtered = []
     for d in results:
@@ -381,17 +389,28 @@ def answer_from_qa(question: str, qa_index, answer_mode: str, history):
     return ans if ans else None
 
 def smart_answer(question: str, qa_index, sop_index, answer_mode: str, history):
-    # Listings intent → SOP listings first → QA listings only
-    if is_listings_intent(question):
+    # ✅ Fix the “obviously related follow-up”:
+    # If user asks about channel handler, treat it as listings-related (even if not using listings keywords)
+    followup_to_listings = False
+    if is_channel_handler_question(question):
+        followup_to_listings = True
+        if history:
+            # If any recent question was listings-related, keep it tied
+            recent = " ".join([h.get("q", "") for h in history[-3:]])
+            if is_listings_intent(recent):
+                followup_to_listings = True
+
+    # Listings intent OR channel-handler follow-up → SOP listings first → QA listings only
+    if is_listings_intent(question) or followup_to_listings:
         a = answer_from_sop_listings_first(question, sop_index)
         if a:
             return a
-        a = answer_from_qa(question, qa_index, answer_mode, history)
+        a = answer_from_qa(question, qa_index, answer_mode, history, force_listings_filter=True)
         if a:
             return a
         return "I couldn’t find a clear answer to that."
 
-    # Non-listings questions → QA first, then SOP fallback
+    # Non-listings
     a = answer_from_qa(question, qa_index, answer_mode, history)
     if a:
         return a
@@ -441,12 +460,15 @@ else:
 # QUESTION UI
 # ===============================
 with st.form("ask_form", clear_on_submit=True):
-    q = st.text_input("Ask a question")
+    st.markdown('<div class="ask-label">Ask a question</div>', unsafe_allow_html=True)
+    q = st.text_input("", placeholder="Type your question here...")
 
-    # ✅ FIX: keep buttons left + close + wide enough to avoid vertical letters
-    b1, b2, _sp = safe_columns([1, 1, 10], gap="small")
-    ask = b1.form_submit_button("Ask")
-    clear = b2.form_submit_button("Clear chat")
+    # ✅ Buttons centered + closer together
+    left, mid, right = st.columns([4, 3, 4])
+    with mid:
+        b1, b2 = safe_columns([1, 1], gap="small")
+        ask = b1.form_submit_button("Ask")
+        clear = b2.form_submit_button("Clear chat")
 
 # ===============================
 # CLEAR CHAT
@@ -477,11 +499,13 @@ if ask and q.strip():
     st.rerun()
 
 # ===============================
-# CHAT HISTORY
+# CHAT HISTORY (NEWEST ON TOP)
 # ===============================
 style = bubble_style(tool_mode)
 
-for idx, item in enumerate(st.session_state.chat[tool_mode]):
+items = list(enumerate(st.session_state.chat[tool_mode]))[::-1]  # newest first
+
+for orig_idx, item in items:
     q_txt = html.escape(item.get("q", ""))
 
     # Only question in bubble
@@ -499,7 +523,7 @@ for idx, item in enumerate(st.session_state.chat[tool_mode]):
     if a_txt:
         st.markdown(a_txt)
 
-    # Download buttons inside chat
+    # Download buttons inside chat (stable keys using orig_idx)
     downloads = item.get("downloads", [])
     if downloads:
         cols = st.columns(min(3, len(downloads)))
@@ -513,7 +537,7 @@ for idx, item in enumerate(st.session_state.chat[tool_mode]):
                         data=f.read(),
                         file_name=os.path.basename(fp),
                         mime="text/plain",
-                        key=f"dl_{tool_mode}_{idx}_{i}_{os.path.basename(fp)}"
+                        key=f"dl_{tool_mode}_{orig_idx}_{i}_{os.path.basename(fp)}"
                     )
 
     st.markdown("---")
