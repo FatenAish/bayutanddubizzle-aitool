@@ -61,7 +61,7 @@ if REQUIRE_CODE:
 st.set_page_config(page_title="Bayut & Dubizzle Internal Assistant", layout="wide")
 
 # ===============================
-# UI CSS
+# UI CSS (KEEP SAME DESIGN)
 # ===============================
 st.markdown(
     """
@@ -125,10 +125,32 @@ def read_text(fp):
         with open(fp, "r", encoding="utf-8-sig") as f:
             return f.read()
 
-def clean_answer(txt):
-    txt = re.sub(r"\bQ\d*\s*[:–-]?\s*", "", txt)
-    txt = re.sub(r"\bA\s*[:–-]?\s*", "", txt)
-    return re.sub(r"\s{2,}", " ", txt).strip()
+def clean_answer(txt: str) -> str:
+    """
+    Clean the retrieved chunk so we output ONLY the answer text.
+    - removes leading "Q:" / "A:" and similar variants
+    - collapses extra whitespace
+    - if a chunk contains multiple Q/A blocks, keep ONLY the first answer-like part
+    """
+    if not txt:
+        return ""
+
+    # Normalize lines
+    t = txt.strip()
+
+    # If the chunk contains multiple QA blocks, cut at the next "Q:" occurrence (after the first)
+    # This prevents the "long dump" behavior.
+    parts = re.split(r"\n\s*Q\d*\s*[:–-]\s*", t)
+    t = parts[0] if parts else t
+
+    # Remove inline Q/A markers
+    t = re.sub(r"\bQ\d*\s*[:–-]?\s*", "", t)
+    t = re.sub(r"\bA\s*[:–-]?\s*", "", t)
+
+    # If there's still a " Q:" somewhere later, cut it (extra safety)
+    t = re.split(r"\s+Q\d*\s*[:–-]\s*", t)[0]
+
+    return re.sub(r"\s{2,}", " ", t).strip()
 
 # ===============================
 # EMBEDDINGS
@@ -144,6 +166,7 @@ def get_embeddings():
 # ===============================
 # 🔥 BUILD FAISS INDEX FROM /data
 # ===============================
+@st.cache_resource
 def build_index():
     if not os.path.isdir(DATA_DIR):
         raise RuntimeError("❌ /data folder not found")
@@ -209,17 +232,18 @@ with st.form("ask_form", clear_on_submit=True):
 st.markdown("</div>", unsafe_allow_html=True)
 
 # ===============================
-# ANSWERING — REAL FILE SEARCH
+# ANSWERING — SAME STYLE (ONE CLEAN ANSWER)
 # ===============================
 if ask and q:
     if answer_mode == "Thinking":
         with st.spinner("Thinking..."):
             time.sleep(1)
 
-    results = VECTORSTORE.similarity_search(q, k=4)
+    # IMPORTANT: return only the single best chunk to avoid long mixed answers
+    results = VECTORSTORE.similarity_search(q, k=1)
 
     if results:
-        answer = "\n\n".join(clean_answer(r.page_content) for r in results)
+        answer = clean_answer(results[0].page_content)
     else:
         answer = "No relevant information found in internal files."
 
