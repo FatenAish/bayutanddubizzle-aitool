@@ -15,18 +15,29 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 st.set_page_config(page_title="Bayut & Dubizzle AI Content Assistant", layout="wide")
 
 # =====================================================
+# SOP FILES (DOWNLOAD-ONLY / NOT FOR Q&A)
+# =====================================================
+EXCLUDE_FILES = {
+    "Bayut-Algolia Locations SOP.txt",
+    "Bayut-MyBayut Newsletters SOP.txt",
+    "Bayut-PM Campaigns SOP.txt",
+    "Bayut-Social Media Posting SOP.txt",
+    "Both Corrections and Updates for Listings.txt",
+    "dubizzle Newsletters SOP.txt",
+    "dubizzle PM Campaigns SOP.txt",
+}
+
+# =====================================================
 # CSS (CENTER LAYOUT + BUBBLES + SMALLER MODE BUTTONS)
 # =====================================================
 st.markdown(
     """
     <style>
-      /* Keep content centered and not super wide */
       section.main > div.block-container{
         max-width: 980px;
         padding-top: 2rem;
         padding-bottom: 2rem;
       }
-
       .center { text-align:center; }
 
       .q-bubble{
@@ -39,8 +50,8 @@ st.markdown(
         border: 1px solid rgba(0,0,0,0.06);
       }
       .q-general{ background:#f2f2f2; }
-      .q-bayut{ background:#e6f4ef; }     /* light green */
-      .q-dubizzle{ background:#fdeaea; }  /* light red */
+      .q-bayut{ background:#e6f4ef; }
+      .q-dubizzle{ background:#fdeaea; }
 
       .answer{
         margin-left: 6px;
@@ -48,18 +59,10 @@ st.markdown(
         line-height: 1.6;
       }
 
-      /* General button look */
-      div.stButton > button{
-        border-radius: 10px;
-      }
+      div.stButton > button{ border-radius: 10px; }
 
-      /* ✅ ONLY shrink Ultra-Fast + Thinking buttons (by key) */
-      div[data-testid="stButton"][data-testid*="btn_mode_fast"] > button,
-      div[data-testid="stButton"][data-testid*="btn_mode_thinking"] > button {
-        padding: 0.35rem 0.65rem !important;
-        font-size: 0.92rem !important;
-        min-height: 38px !important;
-      }
+      /* ✅ ONLY shrink Ultra-Fast + Thinking buttons */
+      div[data-testid="stButton"] button[kind="secondary"] { border-radius: 10px; }
     </style>
     """,
     unsafe_allow_html=True
@@ -107,6 +110,27 @@ def clean_answer(text: str) -> str:
     t = re.sub(r"\bA\s*[:–-]\s*", "", t, flags=re.I).strip()
     return t
 
+def looks_like_heading_only(s: str) -> bool:
+    """Skip answers that are just titles like 'MyBayut Newsletters SOP'."""
+    if not s:
+        return True
+    x = s.strip()
+
+    # very short + no punctuation => likely a heading
+    if len(x) < 45 and not re.search(r"[.!?،:;-]", x):
+        # also catches single-line titles
+        return True
+
+    # common SOP/title patterns
+    if re.search(r"\bSOP\b", x, flags=re.I) and len(x.split()) <= 6:
+        return True
+
+    # just a file-like line
+    if x.lower().endswith(".txt"):
+        return True
+
+    return False
+
 # =====================================================
 # EMBEDDINGS
 # =====================================================
@@ -115,7 +139,7 @@ def get_embeddings():
     return HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
 # =====================================================
-# BUILD INDEXES
+# BUILD INDEXES (EXCLUDING SOP FILES)
 # =====================================================
 @st.cache_resource
 def build_indexes():
@@ -128,6 +152,10 @@ def build_indexes():
 
     for fname in os.listdir(DATA_DIR):
         if not fname.lower().endswith(".txt"):
+            continue
+
+        # ✅ exclude SOP reference files from Q&A index
+        if fname in EXCLUDE_FILES:
             continue
 
         raw = read_text(os.path.join(DATA_DIR, fname))
@@ -149,7 +177,7 @@ def build_indexes():
                 dubizzle_docs.append(doc)
 
     if not general_docs:
-        raise RuntimeError("❌ No readable .txt files found in /data")
+        raise RuntimeError("❌ No readable non-SOP .txt files found in /data")
 
     emb = get_embeddings()
     vs_general = FAISS.from_documents(general_docs, emb)
@@ -204,7 +232,7 @@ st.markdown(
 )
 
 # =====================================================
-# ANSWER MODE (CENTERED SEPARATE BUTTONS) ✅ SMALLER
+# ANSWER MODE (CENTERED) + SMALLER BUTTONS (WIDTH OK)
 # =====================================================
 mode_cols = st.columns([3, 4, 4, 3])
 with mode_cols[1]:
@@ -223,7 +251,6 @@ outer = st.columns([1, 6, 1])
 with outer[1]:
     with st.form("ask_form", clear_on_submit=True):
         q = st.text_input("", placeholder="Type your question here…", label_visibility="collapsed")
-
         bcols = st.columns([1, 1])
         ask = bcols[0].form_submit_button("Ask", use_container_width=True)
         clear = bcols[1].form_submit_button("Clear chat", use_container_width=True)
@@ -236,35 +263,42 @@ if clear:
     st.rerun()
 
 # =====================================================
-# ANSWERING
+# ANSWERING (SKIP HEADING-ONLY RESULTS)
 # =====================================================
 if ask and q:
     thinking = (st.session_state.answer_mode == "Thinking")
-    k = 4 if thinking else 1
+    k = 6 if thinking else 3  # search a bit wider so we can skip bad chunks
 
     if thinking:
         with st.spinner("Thinking…"):
-            time.sleep(0.6)
+            time.sleep(0.5)
 
     results = get_vs().similarity_search(q, k=k)
 
-    if not results:
+    parts, seen = [], set()
+    for r in results:
+        a = clean_answer(r.page_content)
+        if not a:
+            continue
+        if looks_like_heading_only(a):
+            continue
+        key = a.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        parts.append(a)
+
+        # Ultra-fast: stop at first good answer
+        if not thinking and parts:
+            break
+        # Thinking: collect up to 4 useful parts
+        if thinking and len(parts) >= 4:
+            break
+
+    if not parts:
         answer = "No relevant information found in internal files."
     else:
-        parts, seen = [], set()
-        for r in results:
-            a = clean_answer(r.page_content)
-            if not a:
-                continue
-            key = a.lower()
-            if key in seen:
-                continue
-            seen.add(key)
-            parts.append(a)
-
         answer = parts[0] if not thinking else "\n\n".join(parts)
-        if not answer:
-            answer = "No relevant information found in internal files."
 
     st.session_state.chat[st.session_state.tool_mode].append({"q": q, "a": answer})
     st.rerun()
