@@ -14,7 +14,7 @@ A:
 - Content Marketing Team: prepares calendars, selects articles, writes content, tests newsletters, and monitors performance
 - Performance Marketing Team: handles technical setup, scheduling, and sending
 
-Q: Who are the Points of Contact (POCs)?
+Q: Who are the Points of Contact for MyBayut newsletters?
 A:
 - EN Content: Sabeeh Rizvi (Writer: Laraib Anis)
 - AR Content: Fatina AlHalaiqa (Writer: Sana'a Yousef)
