@@ -8,7 +8,6 @@ import streamlit as st
 from langchain_community.vectorstores import FAISS
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_core.documents import Document
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 # =====================================================
 # PAGE CONFIG
@@ -22,28 +21,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 
 # =====================================================
-# SOP FILES (DOWNLOAD-ONLY, NOT FOR Q&A)
-# =====================================================
-SOP_FILES = {
-    "Bayut-Algolia Locations SOP.txt",
-    "Bayut-MyBayut Newsletters SOP.txt",
-    "Bayut-PM Campaigns SOP.txt",
-    "Bayut-Social Media Posting SOP.txt",
-    "Both Corrections and Updates for Listings.txt",
-    "dubizzle Newsletters SOP.txt",
-    "dubizzle PM Campaigns SOP.txt",
-}
-
-SOP_KEYWORDS_MAP = [
-    (["newsletter", "newsletters"], ["Bayut-MyBayut Newsletters SOP.txt", "dubizzle Newsletters SOP.txt"]),
-    (["algolia", "location", "locations"], ["Bayut-Algolia Locations SOP.txt"]),
-    (["pm", "performance marketing", "campaign", "campaigns"], ["Bayut-PM Campaigns SOP.txt", "dubizzle PM Campaigns SOP.txt"]),
-    (["social", "instagram", "posting"], ["Bayut-Social Media Posting SOP.txt"]),
-    (["correction", "corrections", "update", "updates", "listing", "listings", "project", "projects"], ["Both Corrections and Updates for Listings.txt"]),
-]
-
-# =====================================================
-# CSS (CENTER + SMALL MODE BUTTONS + QUESTION BUBBLES)
+# CSS (KEEP SIMPLE + YOUR BUBBLES)
 # =====================================================
 st.markdown(
     """
@@ -55,7 +33,6 @@ st.markdown(
       }
       .center { text-align:center; }
 
-      /* Question bubbles (ONLY question) */
       .q-bubble{
         padding: 10px 14px;
         border-radius: 14px;
@@ -75,10 +52,7 @@ st.markdown(
         line-height: 1.6;
       }
 
-      /* Buttons look */
-      div.stButton > button{
-        border-radius: 10px;
-      }
+      div.stButton > button{ border-radius: 10px; }
     </style>
     """,
     unsafe_allow_html=True
@@ -102,12 +76,26 @@ def read_text(fp: str) -> str:
         with open(fp, "r", encoding="utf-8-sig") as f:
             return f.read()
 
+def is_sop_file(filename: str) -> bool:
+    # Treat ANY file containing "SOP" as download-only
+    return "sop" in filename.lower()
+
+def bucket_from_filename(filename: str) -> str:
+    n = filename.lower()
+    if "both" in n:
+        return "both"
+    # MyBayut is Bayut bucket
+    if "mybayut" in n or "bayut" in n:
+        return "bayut"
+    if "dubizzle" in n:
+        return "dubizzle"
+    return "general"
+
 def parse_qa_pairs(text: str):
     """
-    Extract Q/A pairs from text like:
+    Extract Q/A pairs:
       Q: ...
       A: ...
-    Returns list of (q, a)
     """
     pairs = []
     pattern = re.compile(
@@ -122,63 +110,71 @@ def parse_qa_pairs(text: str):
             pairs.append((q, a))
     return pairs
 
-def clean_answer(text: str) -> str:
-    """Return clean answer text without Q/A markers."""
-    if not text:
-        return ""
-    t = text.strip()
-    # If full doc is 'Q: ... A: ...', keep only A content
-    m = re.search(r"(?is)\bA\s*[:\-–]\s*(.*)", t)
-    if m:
-        t = m.group(1).strip()
-    t = re.sub(r"\s{2,}", " ", t).strip()
-    return t
+def normalize_download_query(q: str) -> str:
+    return re.sub(r"\s+", " ", q.lower().strip())
 
-def looks_like_heading_only(s: str) -> bool:
-    if not s:
-        return True
-    x = s.strip()
-    # Very short and no punctuation => likely a heading
-    if len(x) < 50 and not re.search(r"[.!?،:;-]", x):
-        return True
-    # SOP-ish title-only
-    if re.search(r"\bSOP\b", x, flags=re.I) and len(x.split()) <= 7:
-        return True
-    return False
-
-def is_bayut_qa_file(filename: str) -> bool:
-    n = filename.lower()
-    return ("bayut" in n) and (("qa" in n) or ("q&a" in n) or ("qanda" in n) or ("q & a" in n))
-
-def is_dubizzle_qa_file(filename: str) -> bool:
-    n = filename.lower()
-    return ("dubizzle" in n) and (("qa" in n) or ("q&a" in n) or ("qanda" in n) or ("q & a" in n))
-
-def is_sop_file(filename: str) -> bool:
-    return filename in SOP_FILES
-
-def sop_matches_query(q: str):
-    t = q.lower().strip()
-    if "download" not in t and "sop" not in t and "file" not in t:
+def find_sop_matches(query: str):
+    """
+    If user asks to download SOP, show matching SOP files.
+    Examples:
+      download newsletter sop
+      download algolia sop
+      download sop
+    """
+    t = normalize_download_query(query)
+    if ("download" not in t) and ("sop" not in t) and ("file" not in t):
         return []
 
-    matches = set()
-    for keys, files in SOP_KEYWORDS_MAP:
-        if any(k in t for k in keys):
-            for f in files:
-                matches.add(f)
+    # List SOP files that actually exist in /data
+    sop_files = []
+    if os.path.isdir(DATA_DIR):
+        for f in os.listdir(DATA_DIR):
+            if os.path.isfile(os.path.join(DATA_DIR, f)) and is_sop_file(f):
+                sop_files.append(f)
 
-    # If user says "download sop" but no keyword, show all SOPs
-    if ("download" in t and "sop" in t) and not matches:
-        matches = set(SOP_FILES)
+    if not sop_files:
+        return []
 
-    # Only files that exist
-    existing = []
-    for f in matches:
-        fp = os.path.join(DATA_DIR, f)
-        if os.path.isfile(fp):
-            existing.append(f)
-    return existing
+    # If they said "download sop" only -> show all
+    if "download" in t and "sop" in t and len(t.split()) <= 3:
+        return sorted(sop_files)
+
+    # Otherwise filter by keywords
+    keywords = [w for w in re.split(r"[^a-z0-9]+", t) if w and w not in {"download", "sop", "file", "the", "a", "an"}]
+    if not keywords:
+        return sorted(sop_files)
+
+    matches = []
+    for f in sop_files:
+        fn = f.lower()
+        if any(k in fn for k in keywords):
+            matches.append(f)
+
+    # fallback: if no match, show all SOPs
+    return sorted(matches) if matches else sorted(sop_files)
+
+def format_thinking_answer(primary: str, extras: list[str]) -> str:
+    """
+    "Thinking" should feel more detailed without an LLM:
+    - show best answer
+    - add extra relevant details if different
+    """
+    out = []
+    if primary:
+        out.append(primary.strip())
+
+    for ex in extras:
+        ex = ex.strip()
+        if not ex:
+            continue
+        # skip duplicates
+        if primary and ex.lower() == primary.lower():
+            continue
+        out.append(ex)
+
+    # limit
+    out = out[:4]
+    return "\n\n".join(out) if out else "No relevant information found in internal files."
 
 # =====================================================
 # EMBEDDINGS
@@ -188,75 +184,84 @@ def get_embeddings():
     return HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
 # =====================================================
-# BUILD VECTORSTORES (IMPORTANT ROUTING)
-# - Bayut mode: ONLY Bayut Q&A
-# - Dubizzle mode: ONLY Dubizzle Q&A
-# - General mode: ALL (General + Bayut Q&A + Dubizzle Q&A)
-# - SOP files: excluded from Q&A, only downloadable
+# BUILD VECTORS (SMART Q/A INDEXING)
+# We embed ONLY the question, store answer in metadata.
 # =====================================================
 @st.cache_resource
-def build_vectorstores():
+def build_stores():
     if not os.path.isdir(DATA_DIR):
         raise RuntimeError("❌ /data folder not found")
 
-    splitter = RecursiveCharacterTextSplitter(chunk_size=900, chunk_overlap=150)
     emb = get_embeddings()
 
-    docs_all = []
-    docs_bayut_qa = []
-    docs_dubizzle_qa = []
+    docs_general_all = []   # General mode: all QAs
+    docs_bayut = []         # Bayut mode: Bayut/MyBayut + Both QAs only
+    docs_dubizzle = []      # Dubizzle mode: Dubizzle + Both QAs only
+
+    # Also collect SOP files list
+    sop_files_existing = []
 
     for fname in os.listdir(DATA_DIR):
-        if not fname.lower().endswith(".txt"):
+        fp = os.path.join(DATA_DIR, fname)
+        if not os.path.isfile(fp):
+            continue
+        if fname.startswith("."):
             continue
 
-        # SOPs are download-only (NOT indexed)
         if is_sop_file(fname):
+            sop_files_existing.append(fname)
+            continue  # SOPs NOT indexed for Q&A answers
+
+        text = read_text(fp)
+        pairs = parse_qa_pairs(text)
+
+        # Only index Q/A pairs (that’s what you want)
+        if not pairs:
             continue
 
-        full_text = read_text(os.path.join(DATA_DIR, fname))
-        pairs = parse_qa_pairs(full_text)
+        bucket = bucket_from_filename(fname)
 
-        # If it contains Q/A, index by Q/A pairs (smart matching)
-        if pairs:
-            for q, a in pairs:
-                content = f"Q: {q}\nA: {a}"
-                doc = Document(page_content=content, metadata={"source": fname, "q": q})
-                docs_all.append(doc)
+        for q, a in pairs:
+            # embed question ONLY (this is the logic fix)
+            doc = Document(
+                page_content=q,
+                metadata={"answer": a, "source": fname, "bucket": bucket}
+            )
+            docs_general_all.append(doc)
 
-                if is_bayut_qa_file(fname):
-                    docs_bayut_qa.append(doc)
-                if is_dubizzle_qa_file(fname):
-                    docs_dubizzle_qa.append(doc)
+            if bucket in ("bayut", "both"):
+                docs_bayut.append(doc)
+            if bucket in ("dubizzle", "both"):
+                docs_dubizzle.append(doc)
 
-        else:
-            # Non-QA files: chunk as fallback content for GENERAL only
-            chunks = splitter.split_text(full_text)
-            for c in chunks:
-                doc = Document(page_content=c, metadata={"source": fname})
-                docs_all.append(doc)
+            if bucket == "general":
+                # general QAs should be available everywhere only in General mode (your rule)
+                pass
 
-    if not docs_all:
-        raise RuntimeError("❌ No readable non-SOP .txt files found")
+    if not docs_general_all:
+        raise RuntimeError("❌ No Q&A pairs found. Make sure your files contain lines starting with 'Q:' and 'A:'.")
 
-    vs_all = FAISS.from_documents(docs_all, emb)
-    vs_bayut = FAISS.from_documents(docs_bayut_qa, emb) if docs_bayut_qa else None
-    vs_dubizzle = FAISS.from_documents(docs_dubizzle_qa, emb) if docs_dubizzle_qa else None
+    vs_general_all = FAISS.from_documents(docs_general_all, emb)
+    vs_bayut = FAISS.from_documents(docs_bayut, emb) if docs_bayut else None
+    vs_dubizzle = FAISS.from_documents(docs_dubizzle, emb) if docs_dubizzle else None
 
-    return vs_all, vs_bayut, vs_dubizzle
+    return vs_general_all, vs_bayut, vs_dubizzle, sorted(sop_files_existing)
 
 try:
-    VS_ALL, VS_BAYUT_QA, VS_DUBIZZLE_QA = build_vectorstores()
+    VS_ALL, VS_BAYUT, VS_DUBIZZLE, SOP_FILES_EXISTING = build_stores()
 except Exception as e:
     st.error(str(e))
     st.stop()
 
-def pick_vectorstore(mode: str):
-    # User requirement: Bayut uses Bayut QA only, Dubizzle uses Dubizzle QA only, General uses all.
+def pick_store(mode: str):
+    # Your rule:
+    # Bayut => Bayut QA only
+    # Dubizzle => Dubizzle QA only
+    # General => all
     if mode == "Bayut":
-        return VS_BAYUT_QA
+        return VS_BAYUT
     if mode == "Dubizzle":
-        return VS_DUBIZZLE_QA
+        return VS_DUBIZZLE
     return VS_ALL
 
 # =====================================================
@@ -274,7 +279,7 @@ st.markdown(
 )
 
 # =====================================================
-# TOOL MODE (CENTERED SEPARATE BUTTONS)
+# TOOL MODE BUTTONS (CENTERED)
 # =====================================================
 tool_cols = st.columns([2, 3, 3, 3, 2])
 with tool_cols[1]:
@@ -294,9 +299,8 @@ st.markdown(
 
 # =====================================================
 # ANSWER MODE BUTTONS (SMALLER)
-# (Your screenshot: they were too big)
 # =====================================================
-mode_cols = st.columns([4, 2, 2, 4])  # <- smaller centered buttons
+mode_cols = st.columns([4, 2, 2, 4])
 with mode_cols[1]:
     if st.button("Ultra-Fast", key="btn_mode_fast"):
         st.session_state.answer_mode = "Ultra-Fast"
@@ -307,7 +311,7 @@ with mode_cols[2]:
 st.markdown("<div style='height:16px;'></div>", unsafe_allow_html=True)
 
 # =====================================================
-# INPUT (CENTERED) + ASK/CLEAR ROW
+# INPUT + ASK/CLEAR
 # =====================================================
 outer = st.columns([1, 6, 1])
 with outer[1]:
@@ -317,68 +321,72 @@ with outer[1]:
         ask = bcols[0].form_submit_button("Ask", use_container_width=True)
         clear = bcols[1].form_submit_button("Clear chat", use_container_width=True)
 
-# =====================================================
-# CLEAR CHAT
-# =====================================================
 if clear:
     st.session_state.chat[st.session_state.tool_mode] = []
     st.rerun()
 
 # =====================================================
-# ANSWERING + SOP DOWNLOAD REQUESTS
+# ANSWER
 # =====================================================
 if ask and q:
-    # 1) SOP downloads inside chat
-    sop_files = sop_matches_query(q)
-    if sop_files:
-        st.session_state.chat[st.session_state.tool_mode].append({
-            "type": "sop",
-            "q": q,
-            "sops": sop_files
-        })
+    # 1) SOP download request (inside chat)
+    sop_matches = find_sop_matches(q)
+    if sop_matches:
+        st.session_state.chat[st.session_state.tool_mode].append(
+            {"type": "download", "q": q, "files": sop_matches}
+        )
         st.rerun()
 
-    # 2) Normal Q&A
+    # 2) Q&A answer
     thinking = (st.session_state.answer_mode == "Thinking")
-    vs = pick_vectorstore(st.session_state.tool_mode)
+    vs = pick_store(st.session_state.tool_mode)
 
-    # If Bayut/Dubizzle has no QA store, fail clearly
-    if st.session_state.tool_mode in ["Bayut", "Dubizzle"] and vs is None:
-        answer = f"No {st.session_state.tool_mode} Q&A files were found in /data."
-        st.session_state.chat[st.session_state.tool_mode].append({"type": "text", "q": q, "a": answer})
+    # If Bayut/Dubizzle store is empty, be explicit
+    if st.session_state.tool_mode == "Bayut" and vs is None:
+        answer = "No Bayut/MyBayut Q&A files were detected for indexing."
+        st.session_state.chat[st.session_state.tool_mode].append({"type": "qa", "q": q, "a": answer})
+        st.rerun()
+
+    if st.session_state.tool_mode == "Dubizzle" and vs is None:
+        answer = "No dubizzle Q&A files were detected for indexing."
+        st.session_state.chat[st.session_state.tool_mode].append({"type": "qa", "q": q, "a": answer})
         st.rerun()
 
     if thinking:
         with st.spinner("Thinking…"):
-            time.sleep(0.5)
+            time.sleep(0.4)
 
-    k = 6 if thinking else 3
+    # wider search, then we pick answers from metadata
+    k = 8 if thinking else 4
     results = vs.similarity_search(q, k=k)
 
-    parts, seen = [], set()
+    answers = []
     for r in results:
-        a = clean_answer(r.page_content)
-        if not a or looks_like_heading_only(a):
+        a = (r.metadata.get("answer") or "").strip()
+        if not a:
             continue
-        key = a.lower()
-        if key in seen:
+        # avoid title-only junk
+        if len(a) < 25 and not re.search(r"[.!?،:;-]", a):
             continue
-        seen.add(key)
-        parts.append(a)
-        if not thinking and parts:
-            break
-        if thinking and len(parts) >= 4:
-            break
+        # de-dup
+        if a.lower() in [x.lower() for x in answers]:
+            continue
+        answers.append(a)
 
-    if not parts:
-        if st.session_state.tool_mode in ["Bayut", "Dubizzle"]:
-            answer = f"No relevant information found in {st.session_state.tool_mode} Q&A."
+    if not answers:
+        if st.session_state.tool_mode == "Bayut":
+            final = "No relevant answer found in Bayut/MyBayut Q&A."
+        elif st.session_state.tool_mode == "Dubizzle":
+            final = "No relevant answer found in dubizzle Q&A."
         else:
-            answer = "No relevant information found in internal files."
+            final = "No relevant answer found in internal Q&A."
     else:
-        answer = parts[0] if not thinking else "\n\n".join(parts)
+        if not thinking:
+            final = answers[0]
+        else:
+            final = format_thinking_answer(answers[0], answers[1:])
 
-    st.session_state.chat[st.session_state.tool_mode].append({"type": "text", "q": q, "a": answer})
+    st.session_state.chat[st.session_state.tool_mode].append({"type": "qa", "q": q, "a": final})
     st.rerun()
 
 # =====================================================
@@ -393,33 +401,29 @@ bubble_class = {
 history = st.session_state.chat[st.session_state.tool_mode]
 
 for idx, item in enumerate(reversed(history)):
-    # QUESTION BUBBLE
     st.markdown(
         f"<div class='q-bubble {bubble_class}'>{html.escape(item.get('q',''))}</div>",
         unsafe_allow_html=True
     )
 
-    # ANSWER / SOP DOWNLOADS
-    if item.get("type") == "sop":
-        files = item.get("sops", [])
+    if item.get("type") == "download":
+        files = item.get("files", [])
         if not files:
             st.markdown("<div class='answer'>No SOP files matched your request.</div>", unsafe_allow_html=True)
         else:
             st.markdown("<div class='answer'><b>Download SOP file(s):</b></div>", unsafe_allow_html=True)
             for f in files:
                 fp = os.path.join(DATA_DIR, f)
-                try:
-                    with open(fp, "rb") as bf:
-                        st.download_button(
-                            label=f"Download: {f}",
-                            data=bf,
-                            file_name=f,
-                            mime="text/plain",
-                            key=f"dl_{hashlib.md5((f+str(idx)).encode()).hexdigest()}"
-                        )
-                except Exception:
-                    st.markdown(f"<div class='answer'>Could not load: {html.escape(f)}</div>", unsafe_allow_html=True)
-
+                if not os.path.isfile(fp):
+                    continue
+                with open(fp, "rb") as bf:
+                    st.download_button(
+                        label=f"Download: {f}",
+                        data=bf,
+                        file_name=f,
+                        mime="text/plain",
+                        key=f"dl_{hashlib.md5((f+str(idx)).encode()).hexdigest()}"
+                    )
     else:
         st.markdown(f"<div class='answer'>{item.get('a','')}</div>", unsafe_allow_html=True)
 
