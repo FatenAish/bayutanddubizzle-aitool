@@ -1,6 +1,7 @@
-streamlit
-langchain
-langchain-community
-langchain-openai
+streamlit>=1.32
+langchain>=0.1.16
+langchain-community>=0.0.33
+sentence-transformers>=2.2.2
 faiss-cpu
-sentence-transformers
+transformers>=4.39
+torch
