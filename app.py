@@ -56,23 +56,23 @@ if REQUIRE_CODE and ACCESS_CODE:
 
     if not st.session_state["unlocked"]:
         st.markdown(
-            """
-            <style>
-              section.main > div.block-container{ max-width: 520px; padding-top: 6rem; }
-              .gate-wrap{ text-align:center; }
-              .gate-title{ font-size: 34px; font-weight: 900; margin-bottom: 6px; }
-              .gate-sub{ color:#666; margin-bottom: 22px; }
-            </style>
-            <div class="gate-wrap">
-              <div class="gate-title">
-                <span style="color:#0E8A6D;">Bayut</span> &
-                <span style="color:#D71920;">Dubizzle</span>
-              </div>
-              <div class="gate-sub">Internal AI Assistant – Access Required</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+    """
+    <style>
+      section.main > div.block-container{ max-width: 520px; padding-top: 6rem; }
+      .gate-wrap{ text-align:center; }
+      .gate-title{ font-size: 34px; font-weight: 900; margin-bottom: 6px; }
+      .gate-sub{ color:#666; margin-bottom: 22px; }
+    </style>
+    <div class="gate-wrap">
+      <div class="gate-title">
+        <span style="color:#0E8A6D;">Bayut</span> &
+        <span style="color:#D71920;">Dubizzle</span> AI Assistant
+      </div>
+      <div class="gate-sub">Internal AI Assistant – Access Required</div>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
 
         code = st.text_input("Access code", type="password", placeholder="Enter access code", label_visibility="collapsed")
         c1, c2, c3 = st.columns([1, 2, 1])
