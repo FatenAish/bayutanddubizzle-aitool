@@ -4,7 +4,7 @@ Q: What are Algolia Locations?
 A: Algolia Locations are tags added to blog articles to associate content with specific geographic areas, helping improve search accuracy and location-based content discovery.
 
 Q: What is the purpose of Algolia Locations?
-A: The purpose is to ensure all published articles have accurate location tags so they are searchable, properly indexed, and ready for migration to the Strapi system. fileciteturn3file0
+A: The purpose is to ensure all published articles have accurate location tags so they are searchable, properly indexed, and ready for migration to the Strapi system. 
 
 Q: Which articles require Algolia Locations?
 A:
