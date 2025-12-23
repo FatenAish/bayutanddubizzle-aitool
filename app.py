@@ -11,87 +11,78 @@ from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 # =====================================================
-# 🔐 ACCESS GATE
-# =====================================================
-ACCESS_CODE = os.getenv("ACCESS_CODE", "")
-REQUIRE_CODE = os.getenv("REQUIRE_CODE", "0") == "1"
-
-def _h(code: str) -> str:
-    return hashlib.sha256(code.encode()).hexdigest()
-
-if REQUIRE_CODE:
-    expected = _h(ACCESS_CODE)
-    qp = st.experimental_get_query_params()
-    unlocked = st.session_state.get("unlock_hash") == expected
-
-    if (not unlocked) or (qp.get("locked") != ["0"]):
-        st.set_page_config(
-            page_title="Bayut & Dubizzle – Access Required",
-            layout="centered"
-        )
-
-        st.markdown(
-            """
-            <div style="max-width:420px;margin:120px auto;text-align:center;">
-              <h2>Bayut & Dubizzle</h2>
-              <p style="color:#666;">Internal AI Assistant</p>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
-        code = st.text_input(
-            "Access code",
-            type="password",
-            placeholder="Enter access code",
-            label_visibility="collapsed"
-        )
-
-        if st.button("Unlock"):
-            if code == ACCESS_CODE:
-                st.session_state["unlock_hash"] = expected
-                st.experimental_set_query_params(locked="0")
-                st.rerun()
-            else:
-                st.error("Wrong access code")
-
-        st.stop()
-
-# ===============================
 # PAGE CONFIG
-# ===============================
+# =====================================================
 st.set_page_config(
     page_title="Bayut & Dubizzle AI Content Assistant",
     layout="wide"
 )
 
-# ===============================
-# CENTER RADIO (CSS FIX)
-# ===============================
+# =====================================================
+# GLOBAL CSS (UI FIXES)
+# =====================================================
 st.markdown(
     """
     <style>
-      div[data-testid="stRadio"] > div {
+      /* Center mode buttons row */
+      .center-row {
         display: flex;
         justify-content: center;
+        gap: 18px;
+        margin-top: 10px;
       }
-      div[data-testid="stRadio"] label {
-        margin-right: 22px !important;
+
+      /* Thinking toggle buttons */
+      .mode-btn {
+        padding: 6px 16px;
+        border-radius: 20px;
+        border: 1px solid #ddd;
+        cursor: pointer;
+        font-weight: 500;
+        background: #fff;
+      }
+      .mode-btn.active {
+        border-color: #ff4b4b;
+        color: #ff4b4b;
+      }
+
+      /* Question bubbles */
+      .q-bubble {
+        padding: 10px 14px;
+        border-radius: 14px;
+        margin-bottom: 6px;
+        width: fit-content;
+        max-width: 85%;
+        font-weight: 500;
+      }
+      .q-general { background: #f2f2f2; }
+      .q-bayut { background: #e6f4ef; }
+      .q-dubizzle { background: #fdeaea; }
+
+      /* Answer spacing */
+      .answer {
+        margin-left: 8px;
+        margin-bottom: 16px;
+      }
+
+      /* Clear chat button */
+      .clear-btn {
+        margin-top: 10px;
       }
     </style>
     """,
     unsafe_allow_html=True
 )
 
-# ===============================
+# =====================================================
 # PATHS
-# ===============================
+# =====================================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 
-# ===============================
+# =====================================================
 # SESSION STATE
-# ===============================
+# =====================================================
 st.session_state.setdefault("tool_mode", "General")
 st.session_state.setdefault("answer_mode", "Ultra-Fast")
 st.session_state.setdefault("chat", {
@@ -100,9 +91,9 @@ st.session_state.setdefault("chat", {
     "Dubizzle": []
 })
 
-# ===============================
+# =====================================================
 # HELPERS
-# ===============================
+# =====================================================
 def read_text(fp: str) -> str:
     try:
         with open(fp, "r", encoding="utf-8") as f:
@@ -114,48 +105,34 @@ def read_text(fp: str) -> str:
 def clean_answer(text: str) -> str:
     if not text:
         return ""
-
     t = text.strip()
+    t = re.sub(r"\bQ\s*[:–-].*", "", t, flags=re.IGNORECASE)
+    t = re.sub(r"\bA\s*[:–-]\s*", "", t, flags=re.IGNORECASE)
+    return re.sub(r"\s{2,}", " ", t).strip()
 
-    m = re.search(
-        r"\bA\s*[:–-]\s*(.*?)(?=\n\s*Q\d*\s*[:–-]|\Z)",
-        t,
-        flags=re.IGNORECASE | re.DOTALL
-    )
-    if m:
-        t = m.group(1).strip()
-    else:
-        t = re.sub(r"^\s*Q\d*\s*[:–-]\s*", "", t, flags=re.IGNORECASE)
-        t = re.sub(r"^\s*A\s*[:–-]\s*", "", t, flags=re.IGNORECASE)
-        t = re.split(r"\n\s*Q\d*\s*[:–-]\s*", t, maxsplit=1, flags=re.IGNORECASE)[0]
-
-    t = re.sub(r"\s{2,}", " ", t).strip()
-    t = re.sub(r"\bA\s*[:–-]\s*", "", t, flags=re.IGNORECASE).strip()
-    return t
-
-# ===============================
+# =====================================================
 # EMBEDDINGS
-# ===============================
+# =====================================================
 @st.cache_resource
 def get_embeddings():
     return HuggingFaceEmbeddings(
         model_name="sentence-transformers/all-MiniLM-L6-v2"
     )
 
-# ===============================
-# BUILD FAISS INDEXES
-# ===============================
+# =====================================================
+# BUILD INDEXES
+# =====================================================
 @st.cache_resource
 def build_indexes():
     if not os.path.isdir(DATA_DIR):
-        raise RuntimeError("❌ /data folder not found")
+        raise RuntimeError("/data folder missing")
 
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=900,
         chunk_overlap=150
     )
 
-    general_docs, bayut_docs, dubizzle_docs = [], [], []
+    general, bayut, dubizzle = [], [], []
 
     for file in os.listdir(DATA_DIR):
         if not file.lower().endswith(".txt"):
@@ -171,138 +148,146 @@ def build_indexes():
         elif "dubizzle" in name:
             bucket = "dubizzle"
 
-        for chunk in chunks:
-            doc = Document(page_content=chunk, metadata={"source": file})
-            general_docs.append(doc)
+        for c in chunks:
+            doc = Document(page_content=c, metadata={"source": file})
+            general.append(doc)
             if bucket == "bayut":
-                bayut_docs.append(doc)
+                bayut.append(doc)
             elif bucket == "dubizzle":
-                dubizzle_docs.append(doc)
-
-    if not general_docs:
-        raise RuntimeError("❌ No readable .txt files found")
+                dubizzle.append(doc)
 
     emb = get_embeddings()
-
-    vs_general = FAISS.from_documents(general_docs, emb)
-    vs_bayut = FAISS.from_documents(bayut_docs, emb) if bayut_docs else None
-    vs_dubizzle = FAISS.from_documents(dubizzle_docs, emb) if dubizzle_docs else None
-
-    return vs_general, vs_bayut, vs_dubizzle
+    return (
+        FAISS.from_documents(general, emb),
+        FAISS.from_documents(bayut, emb) if bayut else None,
+        FAISS.from_documents(dubizzle, emb) if dubizzle else None,
+    )
 
 VS_GENERAL, VS_BAYUT, VS_DUBIZZLE = build_indexes()
 
-def get_vectorstore(mode: str):
-    if mode == "Bayut" and VS_BAYUT:
+def get_vs():
+    if st.session_state.tool_mode == "Bayut" and VS_BAYUT:
         return VS_BAYUT
-    if mode == "Dubizzle" and VS_DUBIZZLE:
+    if st.session_state.tool_mode == "Dubizzle" and VS_DUBIZZLE:
         return VS_DUBIZZLE
     return VS_GENERAL
 
-# ===============================
+# =====================================================
 # TITLE
-# ===============================
+# =====================================================
 st.markdown(
     """
-    <h1 style="text-align:center;font-weight:800;margin-bottom:0;">
+    <h1 style="text-align:center;font-weight:800;">
       <span style="color:#0E8A6D;">Bayut</span> &
       <span style="color:#D71920;">Dubizzle</span>
       AI Content Assistant
     </h1>
-    <p style="text-align:center;color:#666;margin-top:6px;">
-      Internal AI Assistant
-    </p>
+    <p style="text-align:center;color:#666;">Internal AI Assistant</p>
     """,
     unsafe_allow_html=True
 )
 
-# ===============================
-# MODE BUTTONS
-# ===============================
-c1, c2, c3, c4, c5 = st.columns([1, 1, 1, 1, 1])
-with c2:
+# =====================================================
+# MODE SWITCH
+# =====================================================
+c1, c2, c3 = st.columns(3)
+with c1:
     if st.button("General", use_container_width=True):
         st.session_state.tool_mode = "General"
-with c3:
+with c2:
     if st.button("Bayut", use_container_width=True):
         st.session_state.tool_mode = "Bayut"
-with c4:
+with c3:
     if st.button("Dubizzle", use_container_width=True):
         st.session_state.tool_mode = "Dubizzle"
 
 st.markdown(
-    f"<div style='text-align:center;font-size:18px;font-weight:700;margin-top:6px;'>"
-    f"{st.session_state.tool_mode} Assistant</div>",
+    f"<h3 style='text-align:center'>{st.session_state.tool_mode} Assistant</h3>",
     unsafe_allow_html=True
 )
 
-# ===============================
-# ANSWER MODE (CENTERED)
-# ===============================
-_, mid, _ = st.columns([2, 1, 2])
-with mid:
-    st.session_state.answer_mode = st.radio(
-        "Answer mode",
-        ["Ultra-Fast", "Thinking"],
-        horizontal=True,
+# =====================================================
+# THINKING TOGGLE (CLEAN)
+# =====================================================
+t1, t2, t3 = st.columns([2, 1, 2])
+with t2:
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button(
+            "Ultra-Fast",
+            key="fast",
+            use_container_width=True
+        ):
+            st.session_state.answer_mode = "Ultra-Fast"
+    with col2:
+        if st.button(
+            "Thinking",
+            key="think",
+            use_container_width=True
+        ):
+            st.session_state.answer_mode = "Thinking"
+
+# =====================================================
+# QUESTION INPUT
+# =====================================================
+with st.form("ask", clear_on_submit=True):
+    q = st.text_input(
+        "",
+        placeholder="Type your question here…",
         label_visibility="collapsed"
     )
+    ask = st.form_submit_button("Ask")
 
-# ===============================
-# QUESTION INPUT
-# ===============================
-_, mid, _ = st.columns([1, 3, 1])
-with mid:
-    with st.form("ask_form", clear_on_submit=True):
-        q = st.text_input(
-            "",
-            placeholder="Type your question here...",
-            label_visibility="collapsed"
-        )
-        ask = st.form_submit_button("Ask", use_container_width=True)
-
-# ===============================
-# ANSWERING (REAL THINKING)
-# ===============================
-if ask and q:
-    thinking = (st.session_state.answer_mode == "Thinking")
-
-    if thinking:
-        with st.spinner("Thinking..."):
-            time.sleep(0.6)
-
-    vs = get_vectorstore(st.session_state.tool_mode)
-    k = 4 if thinking else 1
-    results = vs.similarity_search(q, k=k)
-
-    if not results:
-        answer = "No relevant information found in internal files."
-    else:
-        parts, seen = [], set()
-
-        for r in results:
-            a = clean_answer(r.page_content)
-            if not a:
-                continue
-            key = a.lower()
-            if key in seen:
-                continue
-            seen.add(key)
-            parts.append(a)
-
-        if not parts:
-            answer = "No relevant information found in internal files."
-        else:
-            answer = "\n\n".join(parts) if thinking else parts[0]
-
-    st.session_state.chat[st.session_state.tool_mode].append({"q": q, "a": answer})
+# =====================================================
+# CLEAR CHAT
+# =====================================================
+if st.button("Clear chat", type="secondary"):
+    st.session_state.chat[st.session_state.tool_mode] = []
     st.rerun()
 
-# ===============================
-# CHAT HISTORY
-# ===============================
-history = st.session_state.chat[st.session_state.tool_mode]
-for item in reversed(history):
-    st.markdown(f"**Q:** {html.escape(item['q'])}")
-    st.markdown(item["a"])
+# =====================================================
+# ANSWERING
+# =====================================================
+if ask and q:
+    vs = get_vs()
+    k = 4 if st.session_state.answer_mode == "Thinking" else 1
+
+    if st.session_state.answer_mode == "Thinking":
+        with st.spinner("Thinking…"):
+            time.sleep(0.6)
+
+    results = vs.similarity_search(q, k=k)
+
+    parts = []
+    for r in results:
+        a = clean_answer(r.page_content)
+        if a and a not in parts:
+            parts.append(a)
+
+    answer = "\n\n".join(parts) if parts else "No relevant information found."
+
+    st.session_state.chat[st.session_state.tool_mode].append({
+        "q": q,
+        "a": answer
+    })
+    st.rerun()
+
+# =====================================================
+# CHAT HISTORY (QUESTION BUBBLES ONLY)
+# =====================================================
+bubble_class = {
+    "General": "q-general",
+    "Bayut": "q-bayut",
+    "Dubizzle": "q-dubizzle"
+}[st.session_state.tool_mode]
+
+for item in reversed(st.session_state.chat[st.session_state.tool_mode]):
+    st.markdown(
+        f"<div class='q-bubble {bubble_class}'>{html.escape(item['q'])}</div>",
+        unsafe_allow_html=True
+    )
+    st.markdown(
+        f"<div class='answer'>{item['a']}</div>",
+        unsafe_allow_html=True
+    )
     st.markdown("---")
