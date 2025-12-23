@@ -22,7 +22,7 @@ A:
 - Sub-editor: ensures every article has an Algolia Location and updates the tracking sheet
 - Content Team: adds locations to newly published articles 
 
-Q: Who are the Points of Contact (POCs)?
+Q: Who are the Points of Contact for Algolia Locations?
 A:
 - Content Marketing Team (EN): Sabeeh Rizvi
 - Content Marketing Team (AR): Mohammad Alshkoor 
