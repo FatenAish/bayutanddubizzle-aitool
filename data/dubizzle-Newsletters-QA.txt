@@ -17,7 +17,7 @@ A:
 - Content Marketing Team: prepares calendars, selects topics, writes content, and conducts internal testing
 - Performance Marketing Team: handles technical setup, scheduling, and monitoring delivery 
 
-Q: Who are the Points of Contact (POCs)?
+Q: Who are the Points of Contact for dubizzle newsletters?
 A:
 - Content Marketing Team EN:
   - Property: Aruba Yousuf
