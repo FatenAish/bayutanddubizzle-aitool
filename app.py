@@ -18,7 +18,7 @@ st.set_page_config(
 )
 
 # =====================================================
-# FORCE UI CHANGE (CSS)
+# GLOBAL CSS (UI)
 # =====================================================
 st.markdown(
     """
@@ -73,14 +73,18 @@ st.session_state.setdefault("chat", {
 # =====================================================
 # HELPERS
 # =====================================================
-def read_text(fp):
+def read_text(fp: str) -> str:
     try:
-        return open(fp, encoding="utf-8").read()
+        with open(fp, "r", encoding="utf-8") as f:
+            return f.read()
     except UnicodeDecodeError:
-        return open(fp, encoding="utf-8-sig").read()
+        with open(fp, "r", encoding="utf-8-sig") as f:
+            return f.read()
 
-def clean_answer(t):
-    t = re.sub(r"\bQ\s*[:–-].*", "", t, flags=re.I)
+def clean_answer(text: str) -> str:
+    if not text:
+        return ""
+    t = re.sub(r"\bQ\s*[:–-].*", "", text, flags=re.I)
     t = re.sub(r"\bA\s*[:–-]\s*", "", t, flags=re.I)
     return re.sub(r"\s{2,}", " ", t).strip()
 
@@ -94,38 +98,51 @@ def get_embeddings():
     )
 
 # =====================================================
-# BUILD INDEX
+# BUILD INDEXES (FIXED)
 # =====================================================
 @st.cache_resource
 def build_indexes():
-    splitter = RecursiveCharacterTextSplitter(900, 150)
-    g, b, d = [], [], []
+    if not os.path.isdir(DATA_DIR):
+        raise RuntimeError("/data folder not found")
 
-    for f in os.listdir(DATA_DIR):
-        if not f.endswith(".txt"):
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=900,
+        chunk_overlap=150
+    )
+
+    general, bayut, dubizzle = [], [], []
+
+    for fname in os.listdir(DATA_DIR):
+        if not fname.lower().endswith(".txt"):
             continue
 
-        text = read_text(os.path.join(DATA_DIR, f))
+        text = read_text(os.path.join(DATA_DIR, fname))
         chunks = splitter.split_text(text)
 
-        for c in chunks:
-            doc = Document(page_content=c, metadata={"src": f})
-            g.append(doc)
-            if "bayut" in f.lower():
-                b.append(doc)
-            elif "dubizzle" in f.lower():
-                d.append(doc)
+        for chunk in chunks:
+            doc = Document(page_content=chunk, metadata={"source": fname})
+            general.append(doc)
+
+            lname = fname.lower()
+            if "bayut" in lname:
+                bayut.append(doc)
+            elif "dubizzle" in lname:
+                dubizzle.append(doc)
+
+    if not general:
+        raise RuntimeError("No readable .txt files found")
 
     emb = get_embeddings()
+
     return (
-        FAISS.from_documents(g, emb),
-        FAISS.from_documents(b, emb) if b else None,
-        FAISS.from_documents(d, emb) if d else None
+        FAISS.from_documents(general, emb),
+        FAISS.from_documents(bayut, emb) if bayut else None,
+        FAISS.from_documents(dubizzle, emb) if dubizzle else None
     )
 
 VS_G, VS_B, VS_D = build_indexes()
 
-def vs():
+def get_vs():
     if st.session_state.tool_mode == "Bayut" and VS_B:
         return VS_B
     if st.session_state.tool_mode == "Dubizzle" and VS_D:
@@ -152,13 +169,13 @@ st.markdown(
 # =====================================================
 m1, m2, m3 = st.columns(3)
 with m1:
-    if st.button("General", key="mode-general"):
+    if st.button("General"):
         st.session_state.tool_mode = "General"
 with m2:
-    if st.button("Bayut", key="mode-bayut"):
+    if st.button("Bayut"):
         st.session_state.tool_mode = "Bayut"
 with m3:
-    if st.button("Dubizzle", key="mode-dubizzle"):
+    if st.button("Dubizzle"):
         st.session_state.tool_mode = "Dubizzle"
 
 st.markdown(
@@ -167,19 +184,15 @@ st.markdown(
 )
 
 # =====================================================
-# ANSWER MODE (REAL TOGGLE)
+# ANSWER MODE
 # =====================================================
-st.markdown("<div class='mode-row'>", unsafe_allow_html=True)
-
 c1, c2 = st.columns(2)
 with c1:
-    if st.button("Ultra-Fast", key="fast-btn"):
+    if st.button("Ultra-Fast"):
         st.session_state.answer_mode = "Ultra-Fast"
 with c2:
-    if st.button("Thinking", key="think-btn"):
+    if st.button("Thinking"):
         st.session_state.answer_mode = "Thinking"
-
-st.markdown("</div>", unsafe_allow_html=True)
 
 # =====================================================
 # QUESTION INPUT
@@ -191,7 +204,7 @@ with st.form("ask-form", clear_on_submit=True):
 # =====================================================
 # CLEAR CHAT
 # =====================================================
-if st.button("Clear chat", key="clear-chat"):
+if st.button("Clear chat"):
     st.session_state.chat[st.session_state.tool_mode] = []
     st.rerun()
 
@@ -205,9 +218,9 @@ if ask and q:
         with st.spinner("Thinking…"):
             time.sleep(0.6)
 
-    results = vs().similarity_search(q, k=k)
-    parts = []
+    results = get_vs().similarity_search(q, k=k)
 
+    parts = []
     for r in results:
         a = clean_answer(r.page_content)
         if a and a not in parts:
@@ -222,7 +235,7 @@ if ask and q:
     st.rerun()
 
 # =====================================================
-# CHAT HISTORY (QUESTION BUBBLES ONLY)
+# CHAT HISTORY
 # =====================================================
 bubble_class = {
     "General": "bubble-general",
