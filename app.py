@@ -11,7 +11,7 @@ from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 # =====================================================
-# 🔐 ACCESS GATE (SAFE – OPTIONAL)
+# 🔐 ACCESS GATE
 # =====================================================
 ACCESS_CODE = os.getenv("ACCESS_CODE", "")
 REQUIRE_CODE = os.getenv("REQUIRE_CODE", "0") == "1"
@@ -61,8 +61,26 @@ if REQUIRE_CODE:
 # PAGE CONFIG
 # ===============================
 st.set_page_config(
-    page_title="Bayut & Dubizzle Internal Assistant",
+    page_title="Bayut & Dubizzle AI Content Assistant",
     layout="wide"
+)
+
+# ===============================
+# CENTER RADIO (CSS FIX)
+# ===============================
+st.markdown(
+    """
+    <style>
+      div[data-testid="stRadio"] > div {
+        display: flex;
+        justify-content: center;
+      }
+      div[data-testid="stRadio"] label {
+        margin-right: 22px !important;
+      }
+    </style>
+    """,
+    unsafe_allow_html=True
 )
 
 # ===============================
@@ -99,7 +117,6 @@ def clean_answer(text: str) -> str:
 
     t = text.strip()
 
-    # Extract first A block if Q/A formatted
     m = re.search(
         r"\bA\s*[:–-]\s*(.*?)(?=\n\s*Q\d*\s*[:–-]|\Z)",
         t,
@@ -117,7 +134,7 @@ def clean_answer(text: str) -> str:
     return t
 
 # ===============================
-# EMBEDDINGS (ONLINE – STABLE)
+# EMBEDDINGS
 # ===============================
 @st.cache_resource
 def get_embeddings():
@@ -138,9 +155,7 @@ def build_indexes():
         chunk_overlap=150
     )
 
-    general_docs = []
-    bayut_docs = []
-    dubizzle_docs = []
+    general_docs, bayut_docs, dubizzle_docs = [], [], []
 
     for file in os.listdir(DATA_DIR):
         if not file.lower().endswith(".txt"):
@@ -157,10 +172,7 @@ def build_indexes():
             bucket = "dubizzle"
 
         for chunk in chunks:
-            doc = Document(
-                page_content=chunk,
-                metadata={"source": file}
-            )
+            doc = Document(page_content=chunk, metadata={"source": file})
             general_docs.append(doc)
             if bucket == "bayut":
                 bayut_docs.append(doc)
@@ -168,7 +180,7 @@ def build_indexes():
                 dubizzle_docs.append(doc)
 
     if not general_docs:
-        raise RuntimeError("❌ No readable .txt files found in /data")
+        raise RuntimeError("❌ No readable .txt files found")
 
     emb = get_embeddings()
 
@@ -225,7 +237,7 @@ st.markdown(
 )
 
 # ===============================
-# ANSWER MODE
+# ANSWER MODE (CENTERED)
 # ===============================
 _, mid, _ = st.columns([2, 1, 2])
 with mid:
@@ -250,27 +262,40 @@ with mid:
         ask = st.form_submit_button("Ask", use_container_width=True)
 
 # ===============================
-# ANSWERING
+# ANSWERING (REAL THINKING)
 # ===============================
 if ask and q:
-    if st.session_state.answer_mode == "Thinking":
+    thinking = (st.session_state.answer_mode == "Thinking")
+
+    if thinking:
         with st.spinner("Thinking..."):
             time.sleep(0.6)
 
     vs = get_vectorstore(st.session_state.tool_mode)
-    results = vs.similarity_search(q, k=1)
+    k = 4 if thinking else 1
+    results = vs.similarity_search(q, k=k)
 
-    if results:
-        answer = clean_answer(results[0].page_content)
-        if not answer:
-            answer = "No relevant information found in internal files."
-    else:
+    if not results:
         answer = "No relevant information found in internal files."
+    else:
+        parts, seen = [], set()
 
-    st.session_state.chat[st.session_state.tool_mode].append({
-        "q": q,
-        "a": answer
-    })
+        for r in results:
+            a = clean_answer(r.page_content)
+            if not a:
+                continue
+            key = a.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            parts.append(a)
+
+        if not parts:
+            answer = "No relevant information found in internal files."
+        else:
+            answer = "\n\n".join(parts) if thinking else parts[0]
+
+    st.session_state.chat[st.session_state.tool_mode].append({"q": q, "a": answer})
     st.rerun()
 
 # ===============================
