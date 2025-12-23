@@ -25,7 +25,7 @@ if REQUIRE_CODE:
     qp = st.experimental_get_query_params()
     unlocked = st.session_state.get("unlock_hash") == expected
 
-    if not unlocked or qp.get("locked") != ["0"]:
+    if (not unlocked) or (qp.get("locked") != ["0"]):
         st.set_page_config(page_title="Bayut & Dubizzle – Access Required", layout="centered")
 
         st.markdown(
@@ -56,26 +56,9 @@ if REQUIRE_CODE:
         st.stop()
 
 # ===============================
-# PAGE CONFIG
+# PAGE CONFIG (KEEP SIMPLE)
 # ===============================
 st.set_page_config(page_title="Bayut & Dubizzle Internal Assistant", layout="wide")
-
-# ===============================
-# UI CSS (KEEP SAME DESIGN)
-# ===============================
-st.markdown(
-    """
-    <style>
-      .mode-title{font-size:20px;font-weight:700;margin:6px 0;}
-      .question-wrap{max-width:980px;margin:10px auto;}
-      .question-wrap [data-testid="stForm"]{
-        border:1px solid #E7E9EE;border-radius:12px;padding:16px;background:#fff;
-      }
-      .question-wrap label{display:none;}
-    </style>
-    """,
-    unsafe_allow_html=True
-)
 
 # ===============================
 # PATHS
@@ -97,7 +80,10 @@ def _copy_baked_model():
                 for i in os.listdir(MODEL_SRC):
                     s = os.path.join(MODEL_SRC, i)
                     d = os.path.join(MODEL_CACHE, i)
-                    shutil.copytree(s, d, dirs_exist_ok=True) if os.path.isdir(s) else shutil.copy2(s, d)
+                    if os.path.isdir(s):
+                        shutil.copytree(s, d, dirs_exist_ok=True)
+                    else:
+                        shutil.copy2(s, d)
     except Exception:
         pass
 
@@ -112,12 +98,14 @@ os.environ["TRANSFORMERS_OFFLINE"] = "1"
 # ===============================
 # SESSION STATE
 # ===============================
+st.session_state.setdefault("tool_mode", "General")
+st.session_state.setdefault("answer_mode", "Ultra-Fast")
 st.session_state.setdefault("chat", {"General": [], "Bayut": [], "Dubizzle": []})
 
 # ===============================
 # HELPERS
 # ===============================
-def read_text(fp):
+def read_text(fp: str) -> str:
     try:
         with open(fp, "r", encoding="utf-8") as f:
             return f.read()
@@ -125,32 +113,37 @@ def read_text(fp):
         with open(fp, "r", encoding="utf-8-sig") as f:
             return f.read()
 
-def clean_answer(txt: str) -> str:
+def clean_answer(text: str) -> str:
     """
-    Clean the retrieved chunk so we output ONLY the answer text.
-    - removes leading "Q:" / "A:" and similar variants
-    - collapses extra whitespace
-    - if a chunk contains multiple Q/A blocks, keep ONLY the first answer-like part
+    Return ONE clean answer (no dumping multiple Qs).
+    - If chunk contains Q/A format -> extract the first A block only
+    - Otherwise -> remove Q/A markers and cut at the next Q if it appears
     """
-    if not txt:
+    if not text:
         return ""
 
-    # Normalize lines
-    t = txt.strip()
+    t = text.strip()
 
-    # If the chunk contains multiple QA blocks, cut at the next "Q:" occurrence (after the first)
-    # This prevents the "long dump" behavior.
-    parts = re.split(r"\n\s*Q\d*\s*[:–-]\s*", t)
-    t = parts[0] if parts else t
+    # Extract first "A: ..." block if present
+    m = re.search(r"\bA\s*[:–-]\s*(.*?)(?=\n\s*Q\d*\s*[:–-]|\Z)", t, flags=re.IGNORECASE | re.DOTALL)
+    if m:
+        t = m.group(1).strip()
+    else:
+        # Remove leading Q/A markers if present
+        t = re.sub(r"^\s*Q\d*\s*[:–-]\s*", "", t, flags=re.IGNORECASE)
+        t = re.sub(r"^\s*A\s*[:–-]\s*", "", t, flags=re.IGNORECASE)
 
-    # Remove inline Q/A markers
-    t = re.sub(r"\bQ\d*\s*[:–-]?\s*", "", t)
-    t = re.sub(r"\bA\s*[:–-]?\s*", "", t)
+        # If another Q appears later, cut before it (prevents stitched dumps)
+        t = re.split(r"\n\s*Q\d*\s*[:–-]\s*", t, maxsplit=1, flags=re.IGNORECASE)[0]
+        t = re.split(r"\s+Q\d*\s*[:–-]\s*", t, maxsplit=1, flags=re.IGNORECASE)[0]
 
-    # If there's still a " Q:" somewhere later, cut it (extra safety)
-    t = re.split(r"\s+Q\d*\s*[:–-]\s*", t)[0]
+    # Normalize whitespace
+    t = re.sub(r"\s{2,}", " ", t).strip()
 
-    return re.sub(r"\s{2,}", " ", t).strip()
+    # Safety: remove any remaining standalone "A:" that leaks through
+    t = re.sub(r"\bA\s*[:–-]\s*", "", t, flags=re.IGNORECASE).strip()
+
+    return t
 
 # ===============================
 # EMBEDDINGS
@@ -164,96 +157,144 @@ def get_embeddings():
     )
 
 # ===============================
-# 🔥 BUILD FAISS INDEX FROM /data
+# BUILD FAISS INDEXES (GENERAL + BAYUT + DUBIZZLE)
 # ===============================
 @st.cache_resource
-def build_index():
+def build_indexes():
     if not os.path.isdir(DATA_DIR):
         raise RuntimeError("❌ /data folder not found")
 
-    docs = []
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=900,
-        chunk_overlap=150
-    )
+    splitter = RecursiveCharacterTextSplitter(chunk_size=900, chunk_overlap=150)
+
+    general_docs = []
+    bayut_docs = []
+    dubizzle_docs = []
 
     for file in os.listdir(DATA_DIR):
         if not file.lower().endswith(".txt"):
             continue
 
         raw = read_text(os.path.join(DATA_DIR, file))
-        for chunk in splitter.split_text(raw):
-            docs.append(
-                Document(
-                    page_content=chunk,
-                    metadata={"source": file}
-                )
-            )
+        chunks = splitter.split_text(raw)
 
-    if not docs:
+        bucket = "general"
+        name = file.lower()
+        if "bayut" in name:
+            bucket = "bayut"
+        elif "dubizzle" in name:
+            bucket = "dubizzle"
+
+        for chunk in chunks:
+            doc = Document(page_content=chunk, metadata={"source": file})
+            general_docs.append(doc)
+            if bucket == "bayut":
+                bayut_docs.append(doc)
+            elif bucket == "dubizzle":
+                dubizzle_docs.append(doc)
+
+    if not general_docs:
         raise RuntimeError("❌ No readable .txt files found")
 
-    return FAISS.from_documents(docs, get_embeddings())
+    emb = get_embeddings()
 
-VECTORSTORE = build_index()
+    vs_general = FAISS.from_documents(general_docs, emb)
+    vs_bayut = FAISS.from_documents(bayut_docs, emb) if bayut_docs else None
+    vs_dubizzle = FAISS.from_documents(dubizzle_docs, emb) if dubizzle_docs else None
+
+    return vs_general, vs_bayut, vs_dubizzle
+
+VS_GENERAL, VS_BAYUT, VS_DUBIZZLE = build_indexes()
+
+def get_vectorstore(mode: str):
+    if mode == "Bayut" and VS_BAYUT is not None:
+        return VS_BAYUT
+    if mode == "Dubizzle" and VS_DUBIZZLE is not None:
+        return VS_DUBIZZLE
+    return VS_GENERAL
 
 # ===============================
-# SIDEBAR
-# ===============================
-with st.sidebar:
-    tool_mode = st.radio("Select tool", ["General", "Bayut", "Dubizzle"])
-    answer_mode = st.radio("Answer mode", ["Ultra-Fast", "Thinking"])
-
-# ===============================
-# MAIN TITLE
+# TITLE (KEEP SAME SIMPLE LOOK)
 # ===============================
 st.markdown(
     """
-    <h1 style="text-align:center;font-weight:800;">
+    <h1 style="text-align:center;font-weight:800;margin-bottom:0;">
       <span style="color:#0E8A6D;">Bayut</span> &
       <span style="color:#D71920;">Dubizzle</span>
       AI Content Assistant
     </h1>
-    <p style="text-align:center;color:#666;">Internal AI Assistant</p>
+    <p style="text-align:center;color:#666;margin-top:6px;">Internal AI Assistant</p>
     """,
     unsafe_allow_html=True
 )
 
 # ===============================
-# QUESTION UI
+# MODE BUTTONS (CENTERED, SIMPLE)
 # ===============================
-st.markdown('<div class="question-wrap">', unsafe_allow_html=True)
-st.markdown(f'<div class="mode-title">{tool_mode} Assistant</div>', unsafe_allow_html=True)
+c1, c2, c3, c4, c5 = st.columns([1, 1, 1, 1, 1])
+with c2:
+    if st.button("General", use_container_width=True):
+        st.session_state.tool_mode = "General"
+with c3:
+    if st.button("Bayut", use_container_width=True):
+        st.session_state.tool_mode = "Bayut"
+with c4:
+    if st.button("Dubizzle", use_container_width=True):
+        st.session_state.tool_mode = "Dubizzle"
 
-with st.form("ask_form", clear_on_submit=True):
-    q = st.text_input("", placeholder="Type your question here...")
-    ask = st.form_submit_button("Ask")
-
-st.markdown("</div>", unsafe_allow_html=True)
+st.markdown(f"<div style='text-align:center;font-size:18px;font-weight:700;margin-top:6px;'>{st.session_state.tool_mode} Assistant</div>", unsafe_allow_html=True)
 
 # ===============================
-# ANSWERING — SAME STYLE (ONE CLEAN ANSWER)
+# ANSWER MODE (SIMPLE, NO UI DRIFT)
+# ===============================
+m1, m2, m3 = st.columns([2, 1, 2])
+with m2:
+    st.session_state.answer_mode = st.radio(
+        "Answer mode",
+        ["Ultra-Fast", "Thinking"],
+        index=0 if st.session_state.answer_mode == "Ultra-Fast" else 1,
+        horizontal=True,
+        label_visibility="collapsed"
+    )
+
+st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
+
+# ===============================
+# QUESTION INPUT (CENTERED)
+# ===============================
+left, mid, right = st.columns([1, 3, 1])
+with mid:
+    with st.form("ask_form", clear_on_submit=True):
+        q = st.text_input("", placeholder="Type your question here...", label_visibility="collapsed")
+        ask = st.form_submit_button("Ask", use_container_width=True)
+
+# ===============================
+# ANSWERING (ONE CLEAN ANSWER, SAME STYLE)
 # ===============================
 if ask and q:
-    if answer_mode == "Thinking":
+    if st.session_state.answer_mode == "Thinking":
         with st.spinner("Thinking..."):
-            time.sleep(1)
+            time.sleep(0.8)
 
-    # IMPORTANT: return only the single best chunk to avoid long mixed answers
-    results = VECTORSTORE.similarity_search(q, k=1)
+    vs = get_vectorstore(st.session_state.tool_mode)
+
+    # IMPORTANT: k=1 so we NEVER dump mixed Qs
+    results = vs.similarity_search(q, k=1)
 
     if results:
         answer = clean_answer(results[0].page_content)
+        if not answer:
+            answer = "No relevant information found in internal files."
     else:
         answer = "No relevant information found in internal files."
 
-    st.session_state.chat[tool_mode].append({"q": q, "a": answer})
+    st.session_state.chat[st.session_state.tool_mode].append({"q": q, "a": answer})
     st.rerun()
 
 # ===============================
-# CHAT HISTORY
+# CHAT HISTORY (SIMPLE)
 # ===============================
-for item in reversed(st.session_state.chat[tool_mode]):
+history = st.session_state.chat[st.session_state.tool_mode]
+for item in reversed(history):
     st.markdown(f"**Q:** {html.escape(item['q'])}")
     st.markdown(item["a"])
     st.markdown("---")
