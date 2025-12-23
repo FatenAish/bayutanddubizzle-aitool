@@ -10,9 +10,83 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_core.documents import Document
 
 # =====================================================
-# PAGE CONFIG
+# PAGE CONFIG (must be first Streamlit call)
 # =====================================================
 st.set_page_config(page_title="Bayut & Dubizzle AI Content Assistant", layout="wide")
+
+# =====================================================
+# ACCESS CODE GATE (FIRST SCREEN)
+# =====================================================
+ACCESS_CODE = os.getenv("ACCESS_CODE", "").strip()
+REQUIRE_CODE = os.getenv("REQUIRE_CODE", "0").strip() == "1"
+
+def _get_qp():
+    # compatibility across streamlit versions
+    try:
+        return st.query_params  # newer
+    except Exception:
+        return st.experimental_get_query_params()  # older
+
+def _set_qp(**kwargs):
+    try:
+        st.query_params.update(kwargs)
+    except Exception:
+        st.experimental_set_query_params(**kwargs)
+
+if REQUIRE_CODE and ACCESS_CODE:
+    st.session_state.setdefault("unlocked", False)
+
+    qp = _get_qp()
+    qp_code = None
+    try:
+        qp_code = qp.get("code")
+        if isinstance(qp_code, list):
+            qp_code = qp_code[0] if qp_code else None
+    except Exception:
+        qp_code = None
+
+    # Optional auto-unlock via URL: ?code=XXXX
+    if qp_code and qp_code == ACCESS_CODE:
+        st.session_state["unlocked"] = True
+        # remove the code param after unlock (cleaner)
+        try:
+            _set_qp()
+        except Exception:
+            pass
+
+    if not st.session_state["unlocked"]:
+        st.markdown(
+            """
+            <style>
+              section.main > div.block-container{ max-width: 520px; padding-top: 6rem; }
+              .gate-wrap{ text-align:center; }
+              .gate-title{ font-size: 34px; font-weight: 900; margin-bottom: 6px; }
+              .gate-sub{ color:#666; margin-bottom: 22px; }
+            </style>
+            <div class="gate-wrap">
+              <div class="gate-title">
+                <span style="color:#0E8A6D;">Bayut</span> &
+                <span style="color:#D71920;">Dubizzle</span>
+              </div>
+              <div class="gate-sub">Internal AI Assistant – Access Required</div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+        code = st.text_input("Access code", type="password", placeholder="Enter access code", label_visibility="collapsed")
+        c1, c2, c3 = st.columns([1, 2, 1])
+        with c2:
+            unlock = st.button("Unlock", use_container_width=True)
+
+        if unlock:
+            if code == ACCESS_CODE:
+                st.session_state["unlocked"] = True
+                st.rerun()
+            else:
+                st.error("Wrong access code")
+
+        st.stop()
 
 # =====================================================
 # PATHS
@@ -107,7 +181,6 @@ def normalize_download_query(q: str) -> str:
     return re.sub(r"\s+", " ", q.lower().strip())
 
 def sop_candidates():
-    """All SOPs existing in /data."""
     if not os.path.isdir(DATA_DIR):
         return []
     out = []
@@ -118,15 +191,6 @@ def sop_candidates():
     return sorted(out)
 
 def best_sop_match(user_query: str):
-    """
-    Return ONLY the requested SOP file(s), not everything.
-    Logic:
-    - If query mentions "newsletter" => return Bayut newsletter SOP in Bayut mode, dubizzle newsletter SOP in Dubizzle mode,
-      and both in General mode.
-    - If query mentions "algolia" => Bayut algolia SOP
-    - If query mentions "pm campaigns" => per mode / or both in General
-    - If query is just "download sop" with no keyword => show all SOPs
-    """
     t = normalize_download_query(user_query)
     if ("download" not in t) and ("sop" not in t) and ("file" not in t):
         return []
@@ -135,9 +199,10 @@ def best_sop_match(user_query: str):
     if not all_sops:
         return []
 
-    # If they said just "download sop" (no topic) -> show all
     tokens = [x for x in re.split(r"[^a-z0-9]+", t) if x]
     topic_tokens = [x for x in tokens if x not in {"download", "sop", "file", "the", "a", "an"}]
+
+    # If they said only: download sop -> show all SOPs
     if ("download" in tokens and "sop" in tokens) and (not topic_tokens):
         return all_sops
 
@@ -156,12 +221,12 @@ def best_sop_match(user_query: str):
             return dub or []
         return (bay + dub) if (bay or dub) else []
 
-    # algolia locations
+    # algolia
     if any(k in t for k in ["algolia", "location", "locations"]):
         return pick_by_contains(["algolia", "locations"]) or []
 
     # PM campaigns
-    if any(k in t for k in ["pm", "campaign", "campaigns", "performance marketing"]):
+    if any(k in t for k in ["pm", "campaign", "campaigns", "performance", "marketing"]):
         bay = pick_by_contains(["bayut", "campaign"])
         dub = pick_by_contains(["dubizzle", "campaign"])
         if mode == "Bayut":
@@ -178,14 +243,15 @@ def best_sop_match(user_query: str):
     if any(k in t for k in ["correction", "corrections", "update", "updates", "listing", "listings", "project", "projects"]):
         return [f for f in all_sops if "corrections" in f.lower() or "updates" in f.lower()] or []
 
-    # fallback: keyword contains in filename
+    # fallback: keyword match
     matches = []
     for f in all_sops:
         fn = f.lower()
         if any(tok in fn for tok in topic_tokens):
             matches.append(f)
 
-    return matches if matches else all_sops  # last fallback
+    # if nothing matched, do NOT dump everything; return empty (requested by you)
+    return matches
 
 def format_thinking_answer(primary: str, extras: list[str]) -> str:
     out = []
@@ -222,7 +288,6 @@ def build_stores():
         fp = os.path.join(DATA_DIR, fname)
         if not os.path.isfile(fp) or fname.startswith("."):
             continue
-
         if is_sop_file(fname):
             continue
 
@@ -232,6 +297,7 @@ def build_stores():
             continue
 
         bucket = bucket_from_filename(fname)
+
         for q, a in pairs:
             doc = Document(page_content=q, metadata={"answer": a, "source": fname, "bucket": bucket})
             docs_all.append(doc)
@@ -291,8 +357,7 @@ st.markdown(
 )
 
 # =====================================================
-# ANSWER MODE BUTTONS (CENTERED + SMALL)
-# ✅ This fixes your screenshot: both buttons centered.
+# ANSWER MODE BUTTONS (CENTERED)
 # =====================================================
 mode_cols = st.columns([5, 2, 2, 5])
 with mode_cols[1]:
@@ -316,7 +381,6 @@ with outer[1]:
         clear = bcols[1].form_submit_button("Clear chat", use_container_width=True)
 
 if clear:
-    # ✅ clears only this mode history
     st.session_state.chat[st.session_state.tool_mode] = []
     st.rerun()
 
@@ -324,15 +388,11 @@ if clear:
 # ANSWER
 # =====================================================
 if ask and q:
-    # 1) SOP download request: only requested file(s)
     sop_files = best_sop_match(q)
     if sop_files:
-        st.session_state.chat[st.session_state.tool_mode].append(
-            {"type": "download", "q": q, "files": sop_files}
-        )
+        st.session_state.chat[st.session_state.tool_mode].append({"type": "download", "q": q, "files": sop_files})
         st.rerun()
 
-    # 2) Q&A answer
     thinking = (st.session_state.answer_mode == "Thinking")
     vs = pick_store(st.session_state.tool_mode)
 
@@ -355,19 +415,12 @@ if ask and q:
         a = (r.metadata.get("answer") or "").strip()
         if not a:
             continue
-        if len(a) < 25 and not re.search(r"[.!?،:;-]", a):
-            continue
         if a.lower() in [x.lower() for x in answers]:
             continue
         answers.append(a)
 
     if not answers:
-        if st.session_state.tool_mode == "Bayut":
-            final = "No relevant answer found in Bayut/MyBayut Q&A."
-        elif st.session_state.tool_mode == "Dubizzle":
-            final = "No relevant answer found in dubizzle Q&A."
-        else:
-            final = "No relevant answer found in internal Q&A."
+        final = "No relevant answer found in internal Q&A."
     else:
         final = answers[0] if not thinking else format_thinking_answer(answers[0], answers[1:])
 
@@ -375,7 +428,7 @@ if ask and q:
     st.rerun()
 
 # =====================================================
-# CHAT HISTORY (✅ ONLY CURRENT MODE)
+# CHAT HISTORY (ONLY CURRENT MODE)
 # =====================================================
 bubble_class = {
     "General": "q-general",
@@ -393,20 +446,23 @@ for idx, item in enumerate(reversed(history)):
 
     if item.get("type") == "download":
         files = item.get("files", [])
-        st.markdown("<div class='answer'><b>Download SOP file(s):</b></div>", unsafe_allow_html=True)
-        for f in files:
-            fp = os.path.join(DATA_DIR, f)
-            if not os.path.isfile(fp):
-                continue
-            with open(fp, "rb") as bf:
-                st.download_button(
-                    label=f"Download: {f}",
-                    data=bf,
-                    file_name=f,
-                    mime="text/plain",
-                    key=f"dl_{hashlib.md5((f+str(idx)).encode()).hexdigest()}",
-                    use_container_width=False
-                )
+        if not files:
+            st.markdown("<div class='answer'>No matching SOP found for your request.</div>", unsafe_allow_html=True)
+        else:
+            st.markdown("<div class='answer'><b>Download SOP file(s):</b></div>", unsafe_allow_html=True)
+            for f in files:
+                fp = os.path.join(DATA_DIR, f)
+                if not os.path.isfile(fp):
+                    continue
+                with open(fp, "rb") as bf:
+                    st.download_button(
+                        label=f"Download: {f}",
+                        data=bf,
+                        file_name=f,
+                        mime="text/plain",
+                        key=f"dl_{hashlib.md5((f+str(idx)).encode()).hexdigest()}",
+                        use_container_width=False
+                    )
     else:
         st.markdown(f"<div class='answer'>{item.get('a','')}</div>", unsafe_allow_html=True)
 
