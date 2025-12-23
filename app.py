@@ -21,7 +21,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 
 # =====================================================
-# CSS (KEEP SIMPLE + YOUR BUBBLES)
+# CSS
 # =====================================================
 st.markdown(
     """
@@ -77,14 +77,12 @@ def read_text(fp: str) -> str:
             return f.read()
 
 def is_sop_file(filename: str) -> bool:
-    # Treat ANY file containing "SOP" as download-only
     return "sop" in filename.lower()
 
 def bucket_from_filename(filename: str) -> str:
     n = filename.lower()
     if "both" in n:
         return "both"
-    # MyBayut is Bayut bucket
     if "mybayut" in n or "bayut" in n:
         return "bayut"
     if "dubizzle" in n:
@@ -92,11 +90,6 @@ def bucket_from_filename(filename: str) -> str:
     return "general"
 
 def parse_qa_pairs(text: str):
-    """
-    Extract Q/A pairs:
-      Q: ...
-      A: ...
-    """
     pairs = []
     pattern = re.compile(
         r"(?im)^\s*Q\s*[:\-–]\s*(.*?)\s*$\n^\s*A\s*[:\-–]\s*(.*?)(?=^\s*Q\s*[:\-–]\s*|\Z)",
@@ -113,68 +106,99 @@ def parse_qa_pairs(text: str):
 def normalize_download_query(q: str) -> str:
     return re.sub(r"\s+", " ", q.lower().strip())
 
-def find_sop_matches(query: str):
+def sop_candidates():
+    """All SOPs existing in /data."""
+    if not os.path.isdir(DATA_DIR):
+        return []
+    out = []
+    for f in os.listdir(DATA_DIR):
+        fp = os.path.join(DATA_DIR, f)
+        if os.path.isfile(fp) and is_sop_file(f):
+            out.append(f)
+    return sorted(out)
+
+def best_sop_match(user_query: str):
     """
-    If user asks to download SOP, show matching SOP files.
-    Examples:
-      download newsletter sop
-      download algolia sop
-      download sop
+    Return ONLY the requested SOP file(s), not everything.
+    Logic:
+    - If query mentions "newsletter" => return Bayut newsletter SOP in Bayut mode, dubizzle newsletter SOP in Dubizzle mode,
+      and both in General mode.
+    - If query mentions "algolia" => Bayut algolia SOP
+    - If query mentions "pm campaigns" => per mode / or both in General
+    - If query is just "download sop" with no keyword => show all SOPs
     """
-    t = normalize_download_query(query)
+    t = normalize_download_query(user_query)
     if ("download" not in t) and ("sop" not in t) and ("file" not in t):
         return []
 
-    # List SOP files that actually exist in /data
-    sop_files = []
-    if os.path.isdir(DATA_DIR):
-        for f in os.listdir(DATA_DIR):
-            if os.path.isfile(os.path.join(DATA_DIR, f)) and is_sop_file(f):
-                sop_files.append(f)
-
-    if not sop_files:
+    all_sops = sop_candidates()
+    if not all_sops:
         return []
 
-    # If they said "download sop" only -> show all
-    if "download" in t and "sop" in t and len(t.split()) <= 3:
-        return sorted(sop_files)
+    # If they said just "download sop" (no topic) -> show all
+    tokens = [x for x in re.split(r"[^a-z0-9]+", t) if x]
+    topic_tokens = [x for x in tokens if x not in {"download", "sop", "file", "the", "a", "an"}]
+    if ("download" in tokens and "sop" in tokens) and (not topic_tokens):
+        return all_sops
 
-    # Otherwise filter by keywords
-    keywords = [w for w in re.split(r"[^a-z0-9]+", t) if w and w not in {"download", "sop", "file", "the", "a", "an"}]
-    if not keywords:
-        return sorted(sop_files)
+    mode = st.session_state.tool_mode
 
+    def pick_by_contains(substrs):
+        return [f for f in all_sops if all(s in f.lower() for s in substrs)]
+
+    # newsletter
+    if any(k in t for k in ["newsletter", "newsletters"]):
+        bay = pick_by_contains(["bayut", "newsletters"])
+        dub = pick_by_contains(["dubizzle", "newsletters"])
+        if mode == "Bayut":
+            return bay or []
+        if mode == "Dubizzle":
+            return dub or []
+        return (bay + dub) if (bay or dub) else []
+
+    # algolia locations
+    if any(k in t for k in ["algolia", "location", "locations"]):
+        return pick_by_contains(["algolia", "locations"]) or []
+
+    # PM campaigns
+    if any(k in t for k in ["pm", "campaign", "campaigns", "performance marketing"]):
+        bay = pick_by_contains(["bayut", "campaign"])
+        dub = pick_by_contains(["dubizzle", "campaign"])
+        if mode == "Bayut":
+            return bay or []
+        if mode == "Dubizzle":
+            return dub or []
+        return (bay + dub) if (bay or dub) else []
+
+    # social posting
+    if any(k in t for k in ["social", "instagram", "posting"]):
+        return pick_by_contains(["social", "posting"]) or []
+
+    # both corrections/updates
+    if any(k in t for k in ["correction", "corrections", "update", "updates", "listing", "listings", "project", "projects"]):
+        return [f for f in all_sops if "corrections" in f.lower() or "updates" in f.lower()] or []
+
+    # fallback: keyword contains in filename
     matches = []
-    for f in sop_files:
+    for f in all_sops:
         fn = f.lower()
-        if any(k in fn for k in keywords):
+        if any(tok in fn for tok in topic_tokens):
             matches.append(f)
 
-    # fallback: if no match, show all SOPs
-    return sorted(matches) if matches else sorted(sop_files)
+    return matches if matches else all_sops  # last fallback
 
 def format_thinking_answer(primary: str, extras: list[str]) -> str:
-    """
-    "Thinking" should feel more detailed without an LLM:
-    - show best answer
-    - add extra relevant details if different
-    """
     out = []
     if primary:
         out.append(primary.strip())
-
     for ex in extras:
         ex = ex.strip()
         if not ex:
             continue
-        # skip duplicates
         if primary and ex.lower() == primary.lower():
             continue
         out.append(ex)
-
-    # limit
-    out = out[:4]
-    return "\n\n".join(out) if out else "No relevant information found in internal files."
+    return "\n\n".join(out[:4]) if out else "No relevant answer found in internal Q&A."
 
 # =====================================================
 # EMBEDDINGS
@@ -184,8 +208,7 @@ def get_embeddings():
     return HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
 # =====================================================
-# BUILD VECTORS (SMART Q/A INDEXING)
-# We embed ONLY the question, store answer in metadata.
+# BUILD STORES (Embed question only)
 # =====================================================
 @st.cache_resource
 def build_stores():
@@ -193,71 +216,41 @@ def build_stores():
         raise RuntimeError("❌ /data folder not found")
 
     emb = get_embeddings()
-
-    docs_general_all = []   # General mode: all QAs
-    docs_bayut = []         # Bayut mode: Bayut/MyBayut + Both QAs only
-    docs_dubizzle = []      # Dubizzle mode: Dubizzle + Both QAs only
-
-    # Also collect SOP files list
-    sop_files_existing = []
+    docs_all, docs_bayut, docs_dubizzle = [], [], []
 
     for fname in os.listdir(DATA_DIR):
         fp = os.path.join(DATA_DIR, fname)
-        if not os.path.isfile(fp):
-            continue
-        if fname.startswith("."):
+        if not os.path.isfile(fp) or fname.startswith("."):
             continue
 
         if is_sop_file(fname):
-            sop_files_existing.append(fname)
-            continue  # SOPs NOT indexed for Q&A answers
+            continue
 
         text = read_text(fp)
         pairs = parse_qa_pairs(text)
-
-        # Only index Q/A pairs (that’s what you want)
         if not pairs:
             continue
 
         bucket = bucket_from_filename(fname)
-
         for q, a in pairs:
-            # embed question ONLY (this is the logic fix)
-            doc = Document(
-                page_content=q,
-                metadata={"answer": a, "source": fname, "bucket": bucket}
-            )
-            docs_general_all.append(doc)
-
+            doc = Document(page_content=q, metadata={"answer": a, "source": fname, "bucket": bucket})
+            docs_all.append(doc)
             if bucket in ("bayut", "both"):
                 docs_bayut.append(doc)
             if bucket in ("dubizzle", "both"):
                 docs_dubizzle.append(doc)
 
-            if bucket == "general":
-                # general QAs should be available everywhere only in General mode (your rule)
-                pass
+    if not docs_all:
+        raise RuntimeError("❌ No Q&A pairs found. Ensure your files contain 'Q:' and 'A:' blocks.")
 
-    if not docs_general_all:
-        raise RuntimeError("❌ No Q&A pairs found. Make sure your files contain lines starting with 'Q:' and 'A:'.")
-
-    vs_general_all = FAISS.from_documents(docs_general_all, emb)
+    vs_all = FAISS.from_documents(docs_all, emb)
     vs_bayut = FAISS.from_documents(docs_bayut, emb) if docs_bayut else None
     vs_dubizzle = FAISS.from_documents(docs_dubizzle, emb) if docs_dubizzle else None
+    return vs_all, vs_bayut, vs_dubizzle
 
-    return vs_general_all, vs_bayut, vs_dubizzle, sorted(sop_files_existing)
-
-try:
-    VS_ALL, VS_BAYUT, VS_DUBIZZLE, SOP_FILES_EXISTING = build_stores()
-except Exception as e:
-    st.error(str(e))
-    st.stop()
+VS_ALL, VS_BAYUT, VS_DUBIZZLE = build_stores()
 
 def pick_store(mode: str):
-    # Your rule:
-    # Bayut => Bayut QA only
-    # Dubizzle => Dubizzle QA only
-    # General => all
     if mode == "Bayut":
         return VS_BAYUT
     if mode == "Dubizzle":
@@ -298,14 +291,15 @@ st.markdown(
 )
 
 # =====================================================
-# ANSWER MODE BUTTONS (SMALLER)
+# ANSWER MODE BUTTONS (CENTERED + SMALL)
+# ✅ This fixes your screenshot: both buttons centered.
 # =====================================================
-mode_cols = st.columns([4, 2, 2, 4])
+mode_cols = st.columns([5, 2, 2, 5])
 with mode_cols[1]:
-    if st.button("Ultra-Fast", key="btn_mode_fast"):
+    if st.button("Ultra-Fast", use_container_width=True, key="btn_mode_fast"):
         st.session_state.answer_mode = "Ultra-Fast"
 with mode_cols[2]:
-    if st.button("Thinking", key="btn_mode_thinking"):
+    if st.button("Thinking", use_container_width=True, key="btn_mode_thinking"):
         st.session_state.answer_mode = "Thinking"
 
 st.markdown("<div style='height:16px;'></div>", unsafe_allow_html=True)
@@ -322,6 +316,7 @@ with outer[1]:
         clear = bcols[1].form_submit_button("Clear chat", use_container_width=True)
 
 if clear:
+    # ✅ clears only this mode history
     st.session_state.chat[st.session_state.tool_mode] = []
     st.rerun()
 
@@ -329,11 +324,11 @@ if clear:
 # ANSWER
 # =====================================================
 if ask and q:
-    # 1) SOP download request (inside chat)
-    sop_matches = find_sop_matches(q)
-    if sop_matches:
+    # 1) SOP download request: only requested file(s)
+    sop_files = best_sop_match(q)
+    if sop_files:
         st.session_state.chat[st.session_state.tool_mode].append(
-            {"type": "download", "q": q, "files": sop_matches}
+            {"type": "download", "q": q, "files": sop_files}
         )
         st.rerun()
 
@@ -341,22 +336,17 @@ if ask and q:
     thinking = (st.session_state.answer_mode == "Thinking")
     vs = pick_store(st.session_state.tool_mode)
 
-    # If Bayut/Dubizzle store is empty, be explicit
     if st.session_state.tool_mode == "Bayut" and vs is None:
-        answer = "No Bayut/MyBayut Q&A files were detected for indexing."
-        st.session_state.chat[st.session_state.tool_mode].append({"type": "qa", "q": q, "a": answer})
+        st.session_state.chat["Bayut"].append({"type": "qa", "q": q, "a": "No Bayut/MyBayut Q&A files detected."})
         st.rerun()
-
     if st.session_state.tool_mode == "Dubizzle" and vs is None:
-        answer = "No dubizzle Q&A files were detected for indexing."
-        st.session_state.chat[st.session_state.tool_mode].append({"type": "qa", "q": q, "a": answer})
+        st.session_state.chat["Dubizzle"].append({"type": "qa", "q": q, "a": "No dubizzle Q&A files detected."})
         st.rerun()
 
     if thinking:
         with st.spinner("Thinking…"):
-            time.sleep(0.4)
+            time.sleep(0.35)
 
-    # wider search, then we pick answers from metadata
     k = 8 if thinking else 4
     results = vs.similarity_search(q, k=k)
 
@@ -365,10 +355,8 @@ if ask and q:
         a = (r.metadata.get("answer") or "").strip()
         if not a:
             continue
-        # avoid title-only junk
         if len(a) < 25 and not re.search(r"[.!?،:;-]", a):
             continue
-        # de-dup
         if a.lower() in [x.lower() for x in answers]:
             continue
         answers.append(a)
@@ -381,16 +369,13 @@ if ask and q:
         else:
             final = "No relevant answer found in internal Q&A."
     else:
-        if not thinking:
-            final = answers[0]
-        else:
-            final = format_thinking_answer(answers[0], answers[1:])
+        final = answers[0] if not thinking else format_thinking_answer(answers[0], answers[1:])
 
     st.session_state.chat[st.session_state.tool_mode].append({"type": "qa", "q": q, "a": final})
     st.rerun()
 
 # =====================================================
-# CHAT HISTORY (QUESTION BUBBLE ONLY)
+# CHAT HISTORY (✅ ONLY CURRENT MODE)
 # =====================================================
 bubble_class = {
     "General": "q-general",
@@ -398,7 +383,7 @@ bubble_class = {
     "Dubizzle": "q-dubizzle",
 }[st.session_state.tool_mode]
 
-history = st.session_state.chat[st.session_state.tool_mode]
+history = st.session_state.chat.get(st.session_state.tool_mode, [])
 
 for idx, item in enumerate(reversed(history)):
     st.markdown(
@@ -408,22 +393,20 @@ for idx, item in enumerate(reversed(history)):
 
     if item.get("type") == "download":
         files = item.get("files", [])
-        if not files:
-            st.markdown("<div class='answer'>No SOP files matched your request.</div>", unsafe_allow_html=True)
-        else:
-            st.markdown("<div class='answer'><b>Download SOP file(s):</b></div>", unsafe_allow_html=True)
-            for f in files:
-                fp = os.path.join(DATA_DIR, f)
-                if not os.path.isfile(fp):
-                    continue
-                with open(fp, "rb") as bf:
-                    st.download_button(
-                        label=f"Download: {f}",
-                        data=bf,
-                        file_name=f,
-                        mime="text/plain",
-                        key=f"dl_{hashlib.md5((f+str(idx)).encode()).hexdigest()}"
-                    )
+        st.markdown("<div class='answer'><b>Download SOP file(s):</b></div>", unsafe_allow_html=True)
+        for f in files:
+            fp = os.path.join(DATA_DIR, f)
+            if not os.path.isfile(fp):
+                continue
+            with open(fp, "rb") as bf:
+                st.download_button(
+                    label=f"Download: {f}",
+                    data=bf,
+                    file_name=f,
+                    mime="text/plain",
+                    key=f"dl_{hashlib.md5((f+str(idx)).encode()).hexdigest()}",
+                    use_container_width=False
+                )
     else:
         st.markdown(f"<div class='answer'>{item.get('a','')}</div>", unsafe_allow_html=True)
 
