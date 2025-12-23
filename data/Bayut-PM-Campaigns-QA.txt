@@ -24,7 +24,7 @@ A:
 - Design Team: creates campaign creatives
 - Performance Marketing Team: launches campaigns, sets targeting and budgets, and shares results
 
-Q: Who are the Points of Contact (POCs)?
+Q: Who are the Points of Contact for PM Campaigns?
 A:
 - Content Team (EN): Muhammad Shereyar, Sabeeh Rizvi
 - Content Team (AR): Malaak Is-Haqat, Areej Tawfiq Abu Reida
