@@ -15,7 +15,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 st.set_page_config(page_title="Bayut & Dubizzle AI Content Assistant", layout="wide")
 
 # =====================================================
-# CSS (CENTER LAYOUT + BUBBLES)
+# CSS (CENTER LAYOUT + BUBBLES + SMALLER MODE BUTTONS)
 # =====================================================
 st.markdown(
     """
@@ -48,10 +48,17 @@ st.markdown(
         line-height: 1.6;
       }
 
-      /* Make buttons feel consistent */
+      /* General button look */
       div.stButton > button{
         border-radius: 10px;
-        padding: 0.55rem 0.9rem;
+      }
+
+      /* ✅ ONLY shrink Ultra-Fast + Thinking buttons (by key) */
+      div[data-testid="stButton"][data-testid*="btn_mode_fast"] > button,
+      div[data-testid="stButton"][data-testid*="btn_mode_thinking"] > button {
+        padding: 0.35rem 0.65rem !important;
+        font-size: 0.92rem !important;
+        min-height: 38px !important;
       }
     </style>
     """,
@@ -178,9 +185,9 @@ st.markdown(
 )
 
 # =====================================================
-# TOOL MODE (TRULY CENTERED SEPARATE BUTTONS)
+# TOOL MODE (CENTERED SEPARATE BUTTONS)
 # =====================================================
-tool_cols = st.columns([2, 3, 3, 3, 2])  # symmetric padding on sides
+tool_cols = st.columns([2, 3, 3, 3, 2])
 with tool_cols[1]:
     if st.button("General", use_container_width=True, key="btn_tool_general"):
         st.session_state.tool_mode = "General"
@@ -197,9 +204,9 @@ st.markdown(
 )
 
 # =====================================================
-# ANSWER MODE (TRULY CENTERED SEPARATE BUTTONS)
+# ANSWER MODE (CENTERED SEPARATE BUTTONS) ✅ SMALLER
 # =====================================================
-mode_cols = st.columns([3, 4, 4, 3])  # symmetric padding
+mode_cols = st.columns([3, 4, 4, 3])
 with mode_cols[1]:
     if st.button("Ultra-Fast", use_container_width=True, key="btn_mode_fast"):
         st.session_state.answer_mode = "Ultra-Fast"
