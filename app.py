@@ -2,6 +2,7 @@ import os
 import re
 import html
 import time
+import base64
 import hashlib
 import streamlit as st
 
@@ -19,9 +20,9 @@ st.set_page_config(page_title="Bayut & Dubizzle AI Assistant", layout="wide")
 # =====================================================
 def _get_qp():
     try:
-        return st.query_params  # newer Streamlit
+        return st.query_params
     except Exception:
-        return st.experimental_get_query_params()  # older
+        return st.experimental_get_query_params()
 
 def _set_qp(**kwargs):
     try:
@@ -54,7 +55,7 @@ if REQUIRE_CODE and ACCESS_CODE:
     qp_code = _qp_get(qp, "code")
     if qp_code and qp_code == ACCESS_CODE:
         st.session_state["unlocked"] = True
-        _set_qp()  # clear params
+        _set_qp()
 
     if not st.session_state["unlocked"]:
         st.markdown(
@@ -104,7 +105,50 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 
 # =====================================================
-# CSS (Copilot-like hero background with houses/cars shadow)
+# HERO IMAGE (auto-find your uploaded file)
+# =====================================================
+HERO_IMAGE_PREFERRED_NAME = "ChatGPT Image Dec 24, 2025, 04_19_44 PM.png"
+
+def _find_hero_image() -> str | None:
+    # 1) common folders first
+    candidates = [
+        os.path.join(BASE_DIR, "assets", HERO_IMAGE_PREFERRED_NAME),
+        os.path.join(BASE_DIR, HERO_IMAGE_PREFERRED_NAME),
+    ]
+    for p in candidates:
+        if os.path.isfile(p):
+            return p
+
+    # 2) search entire repo for the preferred name
+    for root, _, files in os.walk(BASE_DIR):
+        for f in files:
+            if f == HERO_IMAGE_PREFERRED_NAME:
+                return os.path.join(root, f)
+
+    # 3) fallback: first image inside /assets
+    assets_dir = os.path.join(BASE_DIR, "assets")
+    if os.path.isdir(assets_dir):
+        imgs = [x for x in os.listdir(assets_dir) if x.lower().endswith((".png", ".jpg", ".jpeg"))]
+        if imgs:
+            return os.path.join(assets_dir, sorted(imgs)[0])
+
+    return None
+
+@st.cache_data(show_spinner=False)
+def _img_to_data_uri(path: str) -> str:
+    with open(path, "rb") as f:
+        b64 = base64.b64encode(f.read()).decode("utf-8")
+    ext = os.path.splitext(path)[1].lower().replace(".", "")
+    mime = "image/png" if ext == "png" else "image/jpeg"
+    return f"data:{mime};base64,{b64}"
+
+HERO_IMG_PATH = _find_hero_image()
+HERO_STYLE = ""
+if HERO_IMG_PATH:
+    HERO_STYLE = f"background-image:url('{_img_to_data_uri(HERO_IMG_PATH)}');"
+
+# =====================================================
+# CSS (hero full background image + your same buttons)
 # =====================================================
 st.markdown(
     """
@@ -116,20 +160,30 @@ st.markdown(
       }
       .center { text-align:center; }
 
-      /* HERO (Copilot-like) */
-      .hero {
+      /* HERO */
+      .hero{
         border-radius: 22px;
-        padding: 70px 30px;
+        padding: 80px 30px;
         margin: 10px auto 26px;
         text-align: center;
         color: white;
         position: relative;
         overflow: hidden;
 
-        background:
-          radial-gradient(1200px 600px at 50% 0%, rgba(255,255,255,0.22), rgba(255,255,255,0) 55%),
-          linear-gradient(180deg, #1f7fa1 0%, #176d8d 35%, #0e5b76 100%);
+        background-color: #0e5b76; /* fallback if image not found */
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
       }
+      /* overlay for readability */
+      .hero::before{
+        content:"";
+        position:absolute;
+        inset:0;
+        background: linear-gradient(180deg, rgba(0,0,0,0.18) 0%, rgba(0,0,0,0.60) 100%);
+        z-index:0;
+      }
+      .hero *{ position: relative; z-index:1; }
 
       .hero h1{
         margin: 0;
@@ -139,54 +193,8 @@ st.markdown(
       }
       .hero p{
         margin: 10px 0 0;
-        opacity: 0.9;
+        opacity: 0.92;
         font-size: 16px;
-      }
-
-      /* shadow silhouettes (houses + cars) */
-      .hero::after{
-        content:"";
-        position:absolute;
-        left:0; right:0; bottom:0;
-        height: 55%;
-        opacity: 0.38;
-        pointer-events:none;
-
-        background-repeat: no-repeat;
-        background-position: center bottom;
-        background-size: cover;
-
-        background-image: url("data:image/svg+xml;utf8,\
-<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 360'>\
-  <defs>\
-    <linearGradient id='fade' x1='0' x2='0' y1='0' y2='1'>\
-      <stop offset='0' stop-color='rgba(0,0,0,0)'/>\
-      <stop offset='1' stop-color='rgba(0,0,0,1)'/>\
-    </linearGradient>\
-  </defs>\
-  <g fill='rgba(0,0,0,1)'>\
-    <rect x='0' y='250' width='1200' height='110'/>\
-    <path d='M90 250V170l70-55 70 55v80z'/>\
-    <rect x='140' y='195' width='40' height='55'/>\
-    <path d='M270 250V185l55-45 55 45v65z'/>\
-    <rect x='310' y='210' width='30' height='40'/>\
-    <path d='M420 250V165l85-65 85 65v85z'/>\
-    <rect x='480' y='205' width='45' height='45'/>\
-    <path d='M690 250V185l60-50 60 50v65z'/>\
-    <rect x='735' y='212' width='30' height='38'/>\
-    <path d='M850 250V175l70-55 70 55v75z'/>\
-    <rect x='900' y='205' width='40' height='45'/>\
-    <path d='M190 260h115c10 0 18 8 18 18v10H172v-10c0-10 8-18 18-18z'/>\
-    <rect x='205' y='245' width='70' height='20' rx='6'/>\
-    <circle cx='205' cy='292' r='14' fill='rgba(255,255,255,0.12)'/>\
-    <circle cx='300' cy='292' r='14' fill='rgba(255,255,255,0.12)'/>\
-    <path d='M760 260h140c10 0 18 8 18 18v10H742v-10c0-10 8-18 18-18z'/>\
-    <rect x='785' y='245' width='85' height='20' rx='6'/>\
-    <circle cx='785' cy='292' r='14' fill='rgba(255,255,255,0.12)'/>\
-    <circle cx='895' cy='292' r='14' fill='rgba(255,255,255,0.12)'/>\
-  </g>\
-  <rect x='0' y='110' width='1200' height='250' fill='url(%23fade)' opacity='0.35'/>\
-</svg>");
       }
 
       .pills{
@@ -477,8 +485,8 @@ st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
 history_for_mode = st.session_state.chat.get(st.session_state.tool_mode, [])
 if len(history_for_mode) == 0 and not st.session_state.get("q_input", "").strip():
     st.markdown(
-        """
-        <div class="hero">
+        f"""
+        <div class="hero" style="{HERO_STYLE}">
           <h1>What would you like to do first?</h1>
           <p>Choose a quick action, or type your question below.</p>
           <div class="pills">
@@ -533,6 +541,7 @@ if ask and st.session_state.get("q_input", "").strip():
         st.session_state.chat["Bayut"].append({"type": "qa", "q": q, "a": "No Bayut/MyBayut Q&A files detected."})
         st.session_state["q_input"] = ""
         st.rerun()
+
     if st.session_state.tool_mode == "Dubizzle" and vs is None:
         st.session_state.chat["Dubizzle"].append({"type": "qa", "q": q, "a": "No dubizzle Q&A files detected."})
         st.session_state["q_input"] = ""
