@@ -20,15 +20,14 @@ st.set_page_config(page_title="Bayut & Dubizzle AI Content Assistant", layout="w
 # =====================================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
-
-# =====================================================
-# FULL-SCREEN BACKGROUND (auto-detect image in /assets or repo root)
-# Put your image in:  /assets/background.png   (recommended)
-# =====================================================
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 
-def _find_background_image() -> str | None:
-    # Priority 1: explicit file name if exists
+# =====================================================
+# BACKGROUND (FULL SCREEN, STABLE ACROSS RERUNS)
+# Put your image in /assets/background.png (recommended)
+# Or it will auto-detect the first image in /assets, root, or /data
+# =====================================================
+def _find_background_image():
     preferred = [
         os.path.join(ASSETS_DIR, "background.png"),
         os.path.join(ASSETS_DIR, "background.jpg"),
@@ -38,21 +37,27 @@ def _find_background_image() -> str | None:
         if os.path.isfile(p):
             return p
 
-    # Priority 2: any image in /assets
+    # any image in /assets
     if os.path.isdir(ASSETS_DIR):
         imgs = [x for x in os.listdir(ASSETS_DIR) if x.lower().endswith((".png", ".jpg", ".jpeg"))]
         if imgs:
             return os.path.join(ASSETS_DIR, sorted(imgs)[0])
 
-    # Priority 3: any image in repo root (last resort)
+    # any image in repo root
     imgs_root = [x for x in os.listdir(BASE_DIR) if x.lower().endswith((".png", ".jpg", ".jpeg"))]
     if imgs_root:
         return os.path.join(BASE_DIR, sorted(imgs_root)[0])
 
+    # any image in /data (since you uploaded one there sometimes)
+    if os.path.isdir(DATA_DIR):
+        imgs_data = [x for x in os.listdir(DATA_DIR) if x.lower().endswith((".png", ".jpg", ".jpeg"))]
+        if imgs_data:
+            return os.path.join(DATA_DIR, sorted(imgs_data)[0])
+
     return None
 
 @st.cache_data(show_spinner=False)
-def _img_to_data_uri(path: str) -> str:
+def _img_to_data_uri(path: str):
     with open(path, "rb") as f:
         b64 = base64.b64encode(f.read()).decode("utf-8")
     ext = os.path.splitext(path)[1].lower()
@@ -63,58 +68,51 @@ _BG_PATH = _find_background_image()
 _BG_URI = _img_to_data_uri(_BG_PATH) if _BG_PATH else None
 
 # =====================================================
-# GLOBAL CSS (BACKGROUND + GLASS CARD so text stays readable)
+# CSS (Background + UI)
+# IMPORTANT: background applied to Streamlit containers with !important
+# Overlay is inside background-image so it never disappears.
 # =====================================================
-bg_css = (
-    f"background-image:url('{_BG_URI}');"
-    if _BG_URI
-    else "background-image:linear-gradient(180deg,#0e5b76 0%, #0a3d4f 100%);"
-)
+if _BG_URI:
+    bg = f"linear-gradient(rgba(0,0,0,0.35), rgba(0,0,0,0.35)), url('{_BG_URI}')"
+else:
+    bg = "linear-gradient(180deg,#0e5b76 0%, #0a3d4f 100%)"
 
 st.markdown(
     f"""
     <style>
-      /* Full-screen background on the WHOLE app */
-      .stApp {{
-        {bg_css}
-        background-size: cover;
-        background-position: center;
-        background-repeat: no-repeat;
-        background-attachment: fixed;
+      /* FULL SCREEN BACKGROUND (stable) */
+      html, body {{
+        height: 100%;
+        background: {bg} !important;
+        background-size: cover !important;
+        background-position: center !important;
+        background-repeat: no-repeat !important;
+        background-attachment: fixed !important;
       }}
 
-      /* Dark overlay on top of background (so content readable) */
-      .stApp::before {{
-        content: "";
-        position: fixed;
-        inset: 0;
-        background: rgba(0,0,0,0.30);
-        z-index: 0;
-        pointer-events: none;
-      }}
-
-      /* Keep Streamlit main content above overlay */
-      [data-testid="stAppViewContainer"] {{
+      /* Streamlit containers */
+      .stApp,
+      [data-testid="stAppViewContainer"],
+      [data-testid="stAppViewContainer"] > .main {{
         background: transparent !important;
-        position: relative;
-        z-index: 1;
       }}
+
       [data-testid="stHeader"] {{
         background: transparent !important;
       }}
 
-      /* Glass card behind your whole UI (keeps same layout but readable) */
-      section.main > div.block-container {{
-        max-width: 980px;
-        padding-top: 2rem;
-        padding-bottom: 2rem;
+      /* Main content "glass card" */
+      div.block-container {{
+        max-width: 980px !important;
+        padding-top: 2rem !important;
+        padding-bottom: 2rem !important;
 
-        background: rgba(255,255,255,0.90);
-        border: 1px solid rgba(0,0,0,0.06);
-        border-radius: 22px;
-        backdrop-filter: blur(10px);
-        -webkit-backdrop-filter: blur(10px);
-        box-shadow: 0 20px 60px rgba(0,0,0,0.18);
+        background: rgba(255,255,255,0.92) !important;
+        border: 1px solid rgba(0,0,0,0.06) !important;
+        border-radius: 22px !important;
+        backdrop-filter: blur(10px) !important;
+        -webkit-backdrop-filter: blur(10px) !important;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.18) !important;
       }}
 
       .center {{ text-align:center; }}
@@ -140,10 +138,11 @@ st.markdown(
 
       div.stButton > button{{ border-radius: 10px; }}
 
-      /* Slightly smaller buttons for Ultra-Fast / Thinking */
+      /* Smaller Ultra-Fast / Thinking buttons */
       .small-btn div.stButton > button {{
         padding-top: 0.35rem !important;
         padding-bottom: 0.35rem !important;
+        font-size: 0.95rem !important;
       }}
     </style>
     """,
@@ -192,9 +191,9 @@ if REQUIRE_CODE and ACCESS_CODE:
         st.markdown(
             """
             <style>
-              section.main > div.block-container{
-                max-width: 520px;
-                padding-top: 6rem;
+              div.block-container{
+                max-width: 520px !important;
+                padding-top: 6rem !important;
               }
               .gate-wrap{ text-align:center; }
               .gate-title{ font-size: 34px; font-weight: 900; margin-bottom: 6px; }
@@ -212,12 +211,7 @@ if REQUIRE_CODE and ACCESS_CODE:
             unsafe_allow_html=True
         )
 
-        code = st.text_input(
-            "Access code",
-            type="password",
-            placeholder="Enter access code",
-            label_visibility="collapsed"
-        )
+        code = st.text_input("Access code", type="password", placeholder="Enter access code", label_visibility="collapsed")
         c1, c2, c3 = st.columns([1, 2, 1])
         with c2:
             unlock = st.button("Unlock", use_container_width=True)
@@ -301,7 +295,6 @@ def best_sop_match(user_query: str):
     tokens = [x for x in re.split(r"[^a-z0-9]+", t) if x]
     topic_tokens = [x for x in tokens if x not in {"download", "sop", "file", "the", "a", "an"}]
 
-    # If they said only: download sop -> show all SOPs
     if ("download" in tokens and "sop" in tokens) and (not topic_tokens):
         return all_sops
 
@@ -310,7 +303,6 @@ def best_sop_match(user_query: str):
     def pick_by_contains(substrs):
         return [f for f in all_sops if all(s in f.lower() for s in substrs)]
 
-    # newsletter
     if any(k in t for k in ["newsletter", "newsletters"]):
         bay = pick_by_contains(["bayut", "newsletters"])
         dub = pick_by_contains(["dubizzle", "newsletters"])
@@ -320,11 +312,9 @@ def best_sop_match(user_query: str):
             return dub or []
         return (bay + dub) if (bay or dub) else []
 
-    # algolia
     if any(k in t for k in ["algolia", "location", "locations"]):
         return pick_by_contains(["algolia", "locations"]) or []
 
-    # PM campaigns
     if any(k in t for k in ["pm", "campaign", "campaigns", "performance", "marketing"]):
         bay = pick_by_contains(["bayut", "campaign"])
         dub = pick_by_contains(["dubizzle", "campaign"])
@@ -334,22 +324,18 @@ def best_sop_match(user_query: str):
             return dub or []
         return (bay + dub) if (bay or dub) else []
 
-    # social posting
     if any(k in t for k in ["social", "instagram", "posting"]):
         return pick_by_contains(["social", "posting"]) or []
 
-    # both corrections/updates
     if any(k in t for k in ["correction", "corrections", "update", "updates", "listing", "listings", "project", "projects"]):
         return [f for f in all_sops if "corrections" in f.lower() or "updates" in f.lower()] or []
 
-    # fallback: keyword match
     matches = []
     for f in all_sops:
         fn = f.lower()
         if any(tok in fn for tok in topic_tokens):
             matches.append(f)
 
-    # if nothing matched, do NOT dump everything
     return matches
 
 def format_thinking_answer(primary: str, extras: list[str]) -> str:
