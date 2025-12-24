@@ -26,7 +26,8 @@ def _get_qp():
 def _set_qp(**kwargs):
     try:
         st.query_params.clear()
-        st.query_params.update(kwargs)
+        if kwargs:
+            st.query_params.update(kwargs)
     except Exception:
         st.experimental_set_query_params(**kwargs)
 
@@ -103,7 +104,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 
 # =====================================================
-# CSS (includes Copilot-style hero)
+# CSS (Copilot-like hero background with houses/cars shadow)
 # =====================================================
 st.markdown(
     """
@@ -115,7 +116,7 @@ st.markdown(
       }
       .center { text-align:center; }
 
-      /* Hero (Copilot-like) */
+      /* HERO (Copilot-like) */
       .hero {
         border-radius: 22px;
         padding: 70px 30px;
@@ -124,10 +125,12 @@ st.markdown(
         color: white;
         position: relative;
         overflow: hidden;
+
         background:
           radial-gradient(1200px 600px at 50% 0%, rgba(255,255,255,0.22), rgba(255,255,255,0) 55%),
           linear-gradient(180deg, #1f7fa1 0%, #176d8d 35%, #0e5b76 100%);
       }
+
       .hero h1{
         margin: 0;
         font-size: 44px;
@@ -139,6 +142,53 @@ st.markdown(
         opacity: 0.9;
         font-size: 16px;
       }
+
+      /* shadow silhouettes (houses + cars) */
+      .hero::after{
+        content:"";
+        position:absolute;
+        left:0; right:0; bottom:0;
+        height: 55%;
+        opacity: 0.38;
+        pointer-events:none;
+
+        background-repeat: no-repeat;
+        background-position: center bottom;
+        background-size: cover;
+
+        background-image: url("data:image/svg+xml;utf8,\
+<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 360'>\
+  <defs>\
+    <linearGradient id='fade' x1='0' x2='0' y1='0' y2='1'>\
+      <stop offset='0' stop-color='rgba(0,0,0,0)'/>\
+      <stop offset='1' stop-color='rgba(0,0,0,1)'/>\
+    </linearGradient>\
+  </defs>\
+  <g fill='rgba(0,0,0,1)'>\
+    <rect x='0' y='250' width='1200' height='110'/>\
+    <path d='M90 250V170l70-55 70 55v80z'/>\
+    <rect x='140' y='195' width='40' height='55'/>\
+    <path d='M270 250V185l55-45 55 45v65z'/>\
+    <rect x='310' y='210' width='30' height='40'/>\
+    <path d='M420 250V165l85-65 85 65v85z'/>\
+    <rect x='480' y='205' width='45' height='45'/>\
+    <path d='M690 250V185l60-50 60 50v65z'/>\
+    <rect x='735' y='212' width='30' height='38'/>\
+    <path d='M850 250V175l70-55 70 55v75z'/>\
+    <rect x='900' y='205' width='40' height='45'/>\
+    <path d='M190 260h115c10 0 18 8 18 18v10H172v-10c0-10 8-18 18-18z'/>\
+    <rect x='205' y='245' width='70' height='20' rx='6'/>\
+    <circle cx='205' cy='292' r='14' fill='rgba(255,255,255,0.12)'/>\
+    <circle cx='300' cy='292' r='14' fill='rgba(255,255,255,0.12)'/>\
+    <path d='M760 260h140c10 0 18 8 18 18v10H742v-10c0-10 8-18 18-18z'/>\
+    <rect x='785' y='245' width='85' height='20' rx='6'/>\
+    <circle cx='785' cy='292' r='14' fill='rgba(255,255,255,0.12)'/>\
+    <circle cx='895' cy='292' r='14' fill='rgba(255,255,255,0.12)'/>\
+  </g>\
+  <rect x='0' y='110' width='1200' height='250' fill='url(%23fade)' opacity='0.35'/>\
+</svg>");
+      }
+
       .pills{
         margin-top: 26px;
         display: flex;
@@ -148,13 +198,14 @@ st.markdown(
       }
       .pill{
         background: rgba(255,255,255,0.88);
-        color: #1f2937;
+        color: #1f2937 !important;
         padding: 10px 16px;
         border-radius: 999px;
-        text-decoration: none;
-        font-weight: 700;
+        text-decoration: none !important;
+        font-weight: 800;
         border: 1px solid rgba(255,255,255,0.7);
         box-shadow: 0 8px 22px rgba(0,0,0,0.12);
+        display: inline-block;
       }
       .pill:hover{ background: rgba(255,255,255,0.97); }
 
@@ -198,7 +249,6 @@ st.session_state.setdefault("q_input", "")
 qp = _get_qp()
 preset = _qp_get(qp, "p")
 if preset:
-    # Fill the input and clear param
     st.session_state["q_input"] = preset
     _set_qp()
 
@@ -376,7 +426,7 @@ def pick_store(mode: str):
     return VS_ALL
 
 # =====================================================
-# HEADER (your existing main UI)
+# HEADER
 # =====================================================
 st.markdown(
     """
@@ -422,9 +472,10 @@ with mode_cols[2]:
 st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
 
 # =====================================================
-# COPILOT-LIKE WELCOME HERO (only when no history in THIS mode)
+# HERO (same buttons as before — NO new buttons)
 # =====================================================
-if len(st.session_state.chat.get(st.session_state.tool_mode, [])) == 0 and not st.session_state.get("q_input", "").strip():
+history_for_mode = st.session_state.chat.get(st.session_state.tool_mode, [])
+if len(history_for_mode) == 0 and not st.session_state.get("q_input", "").strip():
     st.markdown(
         """
         <div class="hero">
@@ -448,7 +499,7 @@ if len(st.session_state.chat.get(st.session_state.tool_mode, [])) == 0 and not s
 outer = st.columns([1, 6, 1])
 with outer[1]:
     with st.form("ask_form", clear_on_submit=False):
-        q = st.text_input(
+        st.text_input(
             "",
             placeholder="Type your question here…",
             label_visibility="collapsed",
