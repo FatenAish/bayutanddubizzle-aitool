@@ -23,9 +23,9 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 
 # =====================================================
-# BACKGROUND (FULL SCREEN, STABLE ACROSS RERUNS)
+# BACKGROUND (FULL WEBSITE)
 # Put your image in /assets/background.png (recommended)
-# Or it will auto-detect the first image in /assets, root, or /data
+# Auto-detects if not found.
 # =====================================================
 def _find_background_image():
     preferred = [
@@ -37,18 +37,15 @@ def _find_background_image():
         if os.path.isfile(p):
             return p
 
-    # any image in /assets
     if os.path.isdir(ASSETS_DIR):
         imgs = [x for x in os.listdir(ASSETS_DIR) if x.lower().endswith((".png", ".jpg", ".jpeg"))]
         if imgs:
             return os.path.join(ASSETS_DIR, sorted(imgs)[0])
 
-    # any image in repo root
     imgs_root = [x for x in os.listdir(BASE_DIR) if x.lower().endswith((".png", ".jpg", ".jpeg"))]
     if imgs_root:
         return os.path.join(BASE_DIR, sorted(imgs_root)[0])
 
-    # any image in /data (since you uploaded one there sometimes)
     if os.path.isdir(DATA_DIR):
         imgs_data = [x for x in os.listdir(DATA_DIR) if x.lower().endswith((".png", ".jpg", ".jpeg"))]
         if imgs_data:
@@ -68,32 +65,52 @@ _BG_PATH = _find_background_image()
 _BG_URI = _img_to_data_uri(_BG_PATH) if _BG_PATH else None
 
 # =====================================================
-# CSS (Background + UI)
-# IMPORTANT: background applied to Streamlit containers with !important
-# Overlay is inside background-image so it never disappears.
+# CSS (THIS IS THE FIX)
+# Background applied to: html/body + .stApp + stAppViewContainer + main
 # =====================================================
 if _BG_URI:
-    bg = f"linear-gradient(rgba(0,0,0,0.35), rgba(0,0,0,0.35)), url('{_BG_URI}')"
+    bg_value = f"linear-gradient(rgba(0,0,0,0.35), rgba(0,0,0,0.35)), url('{_BG_URI}')"
 else:
-    bg = "linear-gradient(180deg,#0e5b76 0%, #0a3d4f 100%)"
+    bg_value = "linear-gradient(180deg,#0e5b76 0%, #0a3d4f 100%)"
 
 st.markdown(
     f"""
     <style>
-      /* FULL SCREEN BACKGROUND (stable) */
+      :root {{
+        --app-bg: {bg_value};
+      }}
+
+      /* FULL WEBSITE BACKGROUND (ALL LAYERS) */
       html, body {{
         height: 100%;
-        background: {bg} !important;
+        min-height: 100%;
+        background: var(--app-bg) !important;
         background-size: cover !important;
         background-position: center !important;
         background-repeat: no-repeat !important;
         background-attachment: fixed !important;
       }}
 
-      /* Streamlit containers */
-      .stApp,
-      [data-testid="stAppViewContainer"],
+      .stApp {{
+        min-height: 100vh !important;
+        background: var(--app-bg) !important;
+        background-size: cover !important;
+        background-position: center !important;
+        background-repeat: no-repeat !important;
+        background-attachment: fixed !important;
+      }}
+
+      [data-testid="stAppViewContainer"] {{
+        min-height: 100vh !important;
+        background: var(--app-bg) !important;
+        background-size: cover !important;
+        background-position: center !important;
+        background-repeat: no-repeat !important;
+        background-attachment: fixed !important;
+      }}
+
       [data-testid="stAppViewContainer"] > .main {{
+        min-height: 100vh !important;
         background: transparent !important;
       }}
 
@@ -101,8 +118,8 @@ st.markdown(
         background: transparent !important;
       }}
 
-      /* Main content "glass card" */
-      div.block-container {{
+      /* MAIN CONTENT GLASS CARD */
+      section.main > div.block-container {{
         max-width: 980px !important;
         padding-top: 2rem !important;
         padding-bottom: 2rem !important;
@@ -117,7 +134,7 @@ st.markdown(
 
       .center {{ text-align:center; }}
 
-      .q-bubble{{
+      .q-bubble {{
         padding: 10px 14px;
         border-radius: 14px;
         max-width: 85%;
@@ -126,17 +143,17 @@ st.markdown(
         margin: 10px 0 8px;
         border: 1px solid rgba(0,0,0,0.06);
       }}
-      .q-general{{ background:#f2f2f2; }}
-      .q-bayut{{ background:#e6f4ef; }}
-      .q-dubizzle{{ background:#fdeaea; }}
+      .q-general {{ background:#f2f2f2; }}
+      .q-bayut {{ background:#e6f4ef; }}
+      .q-dubizzle {{ background:#fdeaea; }}
 
-      .answer{{
+      .answer {{
         margin-left: 6px;
         margin-bottom: 14px;
         line-height: 1.6;
       }}
 
-      div.stButton > button{{ border-radius: 10px; }}
+      div.stButton > button {{ border-radius: 10px; }}
 
       /* Smaller Ultra-Fast / Thinking buttons */
       .small-btn div.stButton > button {{
@@ -157,9 +174,9 @@ REQUIRE_CODE = os.getenv("REQUIRE_CODE", "0").strip() == "1"
 
 def _get_qp():
     try:
-        return st.query_params  # newer
+        return st.query_params
     except Exception:
-        return st.experimental_get_query_params()  # older
+        return st.experimental_get_query_params()
 
 def _set_qp(**kwargs):
     try:
@@ -179,7 +196,6 @@ if REQUIRE_CODE and ACCESS_CODE:
     except Exception:
         qp_code = None
 
-    # Optional auto-unlock via URL: ?code=XXXX
     if qp_code and qp_code == ACCESS_CODE:
         st.session_state["unlocked"] = True
         try:
@@ -191,7 +207,7 @@ if REQUIRE_CODE and ACCESS_CODE:
         st.markdown(
             """
             <style>
-              div.block-container{
+              section.main > div.block-container{
                 max-width: 520px !important;
                 padding-top: 6rem !important;
               }
@@ -211,7 +227,13 @@ if REQUIRE_CODE and ACCESS_CODE:
             unsafe_allow_html=True
         )
 
-        code = st.text_input("Access code", type="password", placeholder="Enter access code", label_visibility="collapsed")
+        code = st.text_input(
+            "Access code",
+            type="password",
+            placeholder="Enter access code",
+            label_visibility="collapsed"
+        )
+
         c1, c2, c3 = st.columns([1, 2, 1])
         with c2:
             unlock = st.button("Unlock", use_container_width=True)
