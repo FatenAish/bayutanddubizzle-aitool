@@ -2,6 +2,7 @@ import os
 import re
 import html
 import time
+import base64
 import hashlib
 import streamlit as st
 
@@ -13,6 +14,132 @@ from langchain_core.documents import Document
 # PAGE CONFIG (must be first Streamlit call)
 # =====================================================
 st.set_page_config(page_title="Bayut & Dubizzle AI Content Assistant", layout="wide")
+
+# =====================================================
+# PATH (need this early for background + gate)
+# =====================================================
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(BASE_DIR, "data")
+
+# =====================================================
+# FULL-PAGE BACKGROUND (uses your uploaded image if found)
+# =====================================================
+BG_IMAGE_NAME = "ChatGPT Image Dec 24, 2025, 04_19_44 PM.png"
+
+def _find_bg_image() -> str | None:
+    # 1) exact common locations
+    candidates = [
+        os.path.join(BASE_DIR, "assets", BG_IMAGE_NAME),
+        os.path.join(BASE_DIR, BG_IMAGE_NAME),
+    ]
+    for p in candidates:
+        if os.path.isfile(p):
+            return p
+
+    # 2) search entire repo for exact filename
+    for root, _, files in os.walk(BASE_DIR):
+        for f in files:
+            if f == BG_IMAGE_NAME:
+                return os.path.join(root, f)
+
+    # 3) fallback: first image inside /assets if exists
+    assets_dir = os.path.join(BASE_DIR, "assets")
+    if os.path.isdir(assets_dir):
+        imgs = [x for x in os.listdir(assets_dir) if x.lower().endswith((".png", ".jpg", ".jpeg"))]
+        if imgs:
+            return os.path.join(assets_dir, sorted(imgs)[0])
+
+    return None
+
+@st.cache_data(show_spinner=False)
+def _img_to_data_uri(path: str) -> str:
+    with open(path, "rb") as f:
+        b64 = base64.b64encode(f.read()).decode("utf-8")
+    ext = os.path.splitext(path)[1].lower().replace(".", "")
+    mime = "image/png" if ext == "png" else "image/jpeg"
+    return f"data:{mime};base64,{b64}"
+
+BG_PATH = _find_bg_image()
+BG_URL = _img_to_data_uri(BG_PATH) if BG_PATH else None
+
+# Inject full-screen background + overlay (works on ALL pages incl. gate)
+st.markdown(
+    f"""
+    <style>
+      /* fixed full screen background */
+      .app-bg {{
+        position: fixed;
+        inset: 0;
+        z-index: -2;
+        background: {"url('" + BG_URL + "')" if BG_URL else "linear-gradient(180deg, #0e5b76 0%, #0a3d4f 100%)"};
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+      }}
+      /* dark overlay so content readable */
+      .app-bg-overlay {{
+        position: fixed;
+        inset: 0;
+        z-index: -1;
+        background: linear-gradient(180deg, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.55) 100%);
+      }}
+
+      /* make main container transparent so background shows */
+      [data-testid="stAppViewContainer"] {{
+        background: transparent !important;
+      }}
+      [data-testid="stHeader"] {{
+        background: transparent !important;
+      }}
+
+      /* OPTIONAL: if you ever use sidebar */
+      [data-testid="stSidebar"] > div {{
+        background: rgba(255,255,255,0.86) !important;
+        backdrop-filter: blur(8px);
+      }}
+
+      /* keep the content area readable */
+      section.main > div.block-container {{
+        max-width: 980px;
+        padding-top: 2rem;
+        padding-bottom: 2rem;
+      }}
+
+      .center {{ text-align:center; }}
+
+      .q-bubble{{
+        padding: 10px 14px;
+        border-radius: 14px;
+        max-width: 85%;
+        width: fit-content;
+        font-weight: 600;
+        margin: 10px 0 8px;
+        border: 1px solid rgba(0,0,0,0.06);
+      }}
+      .q-general{{ background:#f2f2f2; }}
+      .q-bayut{{ background:#e6f4ef; }}
+      .q-dubizzle{{ background:#fdeaea; }}
+
+      .answer{{
+        margin-left: 6px;
+        margin-bottom: 14px;
+        line-height: 1.6;
+        background: rgba(255,255,255,0.85);
+        padding: 10px 12px;
+        border-radius: 12px;
+        border: 1px solid rgba(0,0,0,0.06);
+        width: fit-content;
+        max-width: 92%;
+      }}
+
+      div.stButton > button{{ border-radius: 10px; }}
+    </style>
+
+    <div class="app-bg"></div>
+    <div class="app-bg-overlay"></div>
+    """,
+    unsafe_allow_html=True
+)
 
 # =====================================================
 # ACCESS CODE GATE (FIRST SCREEN)
@@ -48,7 +175,6 @@ if REQUIRE_CODE and ACCESS_CODE:
     # Optional auto-unlock via URL: ?code=XXXX
     if qp_code and qp_code == ACCESS_CODE:
         st.session_state["unlocked"] = True
-        # remove the code param after unlock (cleaner)
         try:
             _set_qp()
         except Exception:
@@ -58,23 +184,41 @@ if REQUIRE_CODE and ACCESS_CODE:
         st.markdown(
             """
             <style>
-              section.main > div.block-container{ max-width: 520px; padding-top: 6rem; }
+              section.main > div.block-container{
+                max-width: 520px;
+                padding-top: 6rem;
+              }
+              .gate-card{
+                background: rgba(255,255,255,0.86);
+                border: 1px solid rgba(0,0,0,0.06);
+                border-radius: 18px;
+                padding: 28px 22px;
+                backdrop-filter: blur(10px);
+              }
               .gate-wrap{ text-align:center; }
               .gate-title{ font-size: 34px; font-weight: 900; margin-bottom: 6px; }
               .gate-sub{ color:#666; margin-bottom: 22px; }
             </style>
-            <div class="gate-wrap">
-              <div class="gate-title">
-                <span style="color:#0E8A6D;">Bayut</span> &
-                <span style="color:#D71920;">Dubizzle</span>
+
+            <div class="gate-card">
+              <div class="gate-wrap">
+                <div class="gate-title">
+                  <span style="color:#0E8A6D;">Bayut</span> &
+                  <span style="color:#D71920;">Dubizzle</span> AI Assistant
+                </div>
+                <div class="gate-sub">Internal AI Assistant – Access Required</div>
               </div>
-              <div class="gate-sub">Internal AI Assistant – Access Required</div>
             </div>
             """,
             unsafe_allow_html=True
         )
 
-        code = st.text_input("Access code", type="password", placeholder="Enter access code", label_visibility="collapsed")
+        code = st.text_input(
+            "Access code",
+            type="password",
+            placeholder="Enter access code",
+            label_visibility="collapsed"
+        )
         c1, c2, c3 = st.columns([1, 2, 1])
         with c2:
             unlock = st.button("Unlock", use_container_width=True)
@@ -87,50 +231,6 @@ if REQUIRE_CODE and ACCESS_CODE:
                 st.error("Wrong access code")
 
         st.stop()
-
-# =====================================================
-# PATHS
-# =====================================================
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "data")
-
-# =====================================================
-# CSS
-# =====================================================
-st.markdown(
-    """
-    <style>
-      section.main > div.block-container{
-        max-width: 980px;
-        padding-top: 2rem;
-        padding-bottom: 2rem;
-      }
-      .center { text-align:center; }
-
-      .q-bubble{
-        padding: 10px 14px;
-        border-radius: 14px;
-        max-width: 85%;
-        width: fit-content;
-        font-weight: 600;
-        margin: 10px 0 8px;
-        border: 1px solid rgba(0,0,0,0.06);
-      }
-      .q-general{ background:#f2f2f2; }
-      .q-bayut{ background:#e6f4ef; }
-      .q-dubizzle{ background:#fdeaea; }
-
-      .answer{
-        margin-left: 6px;
-        margin-bottom: 14px;
-        line-height: 1.6;
-      }
-
-      div.stButton > button{ border-radius: 10px; }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
 
 # =====================================================
 # SESSION STATE
@@ -250,7 +350,7 @@ def best_sop_match(user_query: str):
         if any(tok in fn for tok in topic_tokens):
             matches.append(f)
 
-    # if nothing matched, do NOT dump everything; return empty (requested by you)
+    # if nothing matched, do NOT dump everything
     return matches
 
 def format_thinking_answer(primary: str, extras: list[str]) -> str:
@@ -328,11 +428,13 @@ def pick_store(mode: str):
 # =====================================================
 st.markdown(
     """
-    <h1 class="center" style="font-weight:900;margin-bottom:6px;">
+    <h1 class="center" style="font-weight:900;margin-bottom:6px; color:white; text-shadow:0 6px 18px rgba(0,0,0,0.35);">
       <span style="color:#0E8A6D;">Bayut</span> &
       <span style="color:#D71920;">Dubizzle</span> AI Content Assistant
     </h1>
-    <div class="center" style="color:#666;margin-bottom:14px;">Internal AI Assistant</div>
+    <div class="center" style="color:rgba(255,255,255,0.9); margin-bottom:14px; text-shadow:0 6px 18px rgba(0,0,0,0.35);">
+      Internal AI Assistant
+    </div>
     """,
     unsafe_allow_html=True
 )
@@ -352,7 +454,7 @@ with tool_cols[3]:
         st.session_state.tool_mode = "Dubizzle"
 
 st.markdown(
-    f"<h3 class='center' style='margin-top:18px;margin-bottom:6px;'>{st.session_state.tool_mode} Assistant</h3>",
+    f"<h3 class='center' style='margin-top:18px;margin-bottom:6px; color:white; text-shadow:0 6px 18px rgba(0,0,0,0.35);'>{st.session_state.tool_mode} Assistant</h3>",
     unsafe_allow_html=True
 )
 
