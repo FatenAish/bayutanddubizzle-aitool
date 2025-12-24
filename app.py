@@ -16,38 +16,38 @@ from langchain_core.documents import Document
 st.set_page_config(page_title="Bayut & Dubizzle AI Content Assistant", layout="wide")
 
 # =====================================================
-# PATH (need this early for background + gate)
+# PATHS
 # =====================================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 
 # =====================================================
-# FULL-PAGE BACKGROUND (uses your uploaded image if found)
+# FULL-SCREEN BACKGROUND (auto-detect image in /assets or repo root)
+# Put your image in:  /assets/background.png   (recommended)
 # =====================================================
-BG_IMAGE_NAME = "ChatGPT Image Dec 24, 2025, 04_19_44 PM.png"
+ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 
-def _find_bg_image() -> str | None:
-    # 1) exact common locations
-    candidates = [
-        os.path.join(BASE_DIR, "assets", BG_IMAGE_NAME),
-        os.path.join(BASE_DIR, BG_IMAGE_NAME),
+def _find_background_image() -> str | None:
+    # Priority 1: explicit file name if exists
+    preferred = [
+        os.path.join(ASSETS_DIR, "background.png"),
+        os.path.join(ASSETS_DIR, "background.jpg"),
+        os.path.join(ASSETS_DIR, "background.jpeg"),
     ]
-    for p in candidates:
+    for p in preferred:
         if os.path.isfile(p):
             return p
 
-    # 2) search entire repo for exact filename
-    for root, _, files in os.walk(BASE_DIR):
-        for f in files:
-            if f == BG_IMAGE_NAME:
-                return os.path.join(root, f)
-
-    # 3) fallback: first image inside /assets if exists
-    assets_dir = os.path.join(BASE_DIR, "assets")
-    if os.path.isdir(assets_dir):
-        imgs = [x for x in os.listdir(assets_dir) if x.lower().endswith((".png", ".jpg", ".jpeg"))]
+    # Priority 2: any image in /assets
+    if os.path.isdir(ASSETS_DIR):
+        imgs = [x for x in os.listdir(ASSETS_DIR) if x.lower().endswith((".png", ".jpg", ".jpeg"))]
         if imgs:
-            return os.path.join(assets_dir, sorted(imgs)[0])
+            return os.path.join(ASSETS_DIR, sorted(imgs)[0])
+
+    # Priority 3: any image in repo root (last resort)
+    imgs_root = [x for x in os.listdir(BASE_DIR) if x.lower().endswith((".png", ".jpg", ".jpeg"))]
+    if imgs_root:
+        return os.path.join(BASE_DIR, sorted(imgs_root)[0])
 
     return None
 
@@ -55,54 +55,66 @@ def _find_bg_image() -> str | None:
 def _img_to_data_uri(path: str) -> str:
     with open(path, "rb") as f:
         b64 = base64.b64encode(f.read()).decode("utf-8")
-    ext = os.path.splitext(path)[1].lower().replace(".", "")
-    mime = "image/png" if ext == "png" else "image/jpeg"
+    ext = os.path.splitext(path)[1].lower()
+    mime = "image/png" if ext == ".png" else "image/jpeg"
     return f"data:{mime};base64,{b64}"
 
-BG_PATH = _find_bg_image()
-BG_URL = _img_to_data_uri(BG_PATH) if BG_PATH else None
+_BG_PATH = _find_background_image()
+_BG_URI = _img_to_data_uri(_BG_PATH) if _BG_PATH else None
 
-# Inject full-screen background + overlay (works on ALL pages incl. gate)
+# =====================================================
+# GLOBAL CSS (BACKGROUND + GLASS CARD so text stays readable)
+# =====================================================
+bg_css = (
+    f"background-image:url('{_BG_URI}');"
+    if _BG_URI
+    else "background-image:linear-gradient(180deg,#0e5b76 0%, #0a3d4f 100%);"
+)
+
 st.markdown(
     f"""
     <style>
-      /* fixed full screen background */
-      .app-bg {{
-        position: fixed;
-        inset: 0;
-        z-index: -2;
-        background: {"url('" + BG_URL + "')" if BG_URL else "linear-gradient(180deg, #0e5b76 0%, #0a3d4f 100%)"};
+      /* Full-screen background on the WHOLE app */
+      .stApp {{
+        {bg_css}
         background-size: cover;
         background-position: center;
         background-repeat: no-repeat;
-      }}
-      /* dark overlay so content readable */
-      .app-bg-overlay {{
-        position: fixed;
-        inset: 0;
-        z-index: -1;
-        background: linear-gradient(180deg, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.55) 100%);
+        background-attachment: fixed;
       }}
 
-      /* make main container transparent so background shows */
+      /* Dark overlay on top of background (so content readable) */
+      .stApp::before {{
+        content: "";
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.30);
+        z-index: 0;
+        pointer-events: none;
+      }}
+
+      /* Keep Streamlit main content above overlay */
       [data-testid="stAppViewContainer"] {{
         background: transparent !important;
+        position: relative;
+        z-index: 1;
       }}
       [data-testid="stHeader"] {{
         background: transparent !important;
       }}
 
-      /* OPTIONAL: if you ever use sidebar */
-      [data-testid="stSidebar"] > div {{
-        background: rgba(255,255,255,0.86) !important;
-        backdrop-filter: blur(8px);
-      }}
-
-      /* keep the content area readable */
+      /* Glass card behind your whole UI (keeps same layout but readable) */
       section.main > div.block-container {{
         max-width: 980px;
         padding-top: 2rem;
         padding-bottom: 2rem;
+
+        background: rgba(255,255,255,0.90);
+        border: 1px solid rgba(0,0,0,0.06);
+        border-radius: 22px;
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        box-shadow: 0 20px 60px rgba(0,0,0,0.18);
       }}
 
       .center {{ text-align:center; }}
@@ -124,19 +136,16 @@ st.markdown(
         margin-left: 6px;
         margin-bottom: 14px;
         line-height: 1.6;
-        background: rgba(255,255,255,0.85);
-        padding: 10px 12px;
-        border-radius: 12px;
-        border: 1px solid rgba(0,0,0,0.06);
-        width: fit-content;
-        max-width: 92%;
       }}
 
       div.stButton > button{{ border-radius: 10px; }}
-    </style>
 
-    <div class="app-bg"></div>
-    <div class="app-bg-overlay"></div>
+      /* Slightly smaller buttons for Ultra-Fast / Thinking */
+      .small-btn div.stButton > button {{
+        padding-top: 0.35rem !important;
+        padding-bottom: 0.35rem !important;
+      }}
+    </style>
     """,
     unsafe_allow_html=True
 )
@@ -148,7 +157,6 @@ ACCESS_CODE = os.getenv("ACCESS_CODE", "").strip()
 REQUIRE_CODE = os.getenv("REQUIRE_CODE", "0").strip() == "1"
 
 def _get_qp():
-    # compatibility across streamlit versions
     try:
         return st.query_params  # newer
     except Exception:
@@ -188,26 +196,17 @@ if REQUIRE_CODE and ACCESS_CODE:
                 max-width: 520px;
                 padding-top: 6rem;
               }
-              .gate-card{
-                background: rgba(255,255,255,0.86);
-                border: 1px solid rgba(0,0,0,0.06);
-                border-radius: 18px;
-                padding: 28px 22px;
-                backdrop-filter: blur(10px);
-              }
               .gate-wrap{ text-align:center; }
               .gate-title{ font-size: 34px; font-weight: 900; margin-bottom: 6px; }
               .gate-sub{ color:#666; margin-bottom: 22px; }
             </style>
 
-            <div class="gate-card">
-              <div class="gate-wrap">
-                <div class="gate-title">
-                  <span style="color:#0E8A6D;">Bayut</span> &
-                  <span style="color:#D71920;">Dubizzle</span> AI Assistant
-                </div>
-                <div class="gate-sub">Internal AI Assistant – Access Required</div>
+            <div class="gate-wrap">
+              <div class="gate-title">
+                <span style="color:#0E8A6D;">Bayut</span> &
+                <span style="color:#D71920;">Dubizzle</span> AI Assistant
               </div>
+              <div class="gate-sub">Internal AI Assistant – Access Required</div>
             </div>
             """,
             unsafe_allow_html=True
@@ -428,13 +427,11 @@ def pick_store(mode: str):
 # =====================================================
 st.markdown(
     """
-    <h1 class="center" style="font-weight:900;margin-bottom:6px; color:white; text-shadow:0 6px 18px rgba(0,0,0,0.35);">
+    <h1 class="center" style="font-weight:900;margin-bottom:6px;">
       <span style="color:#0E8A6D;">Bayut</span> &
       <span style="color:#D71920;">Dubizzle</span> AI Content Assistant
     </h1>
-    <div class="center" style="color:rgba(255,255,255,0.9); margin-bottom:14px; text-shadow:0 6px 18px rgba(0,0,0,0.35);">
-      Internal AI Assistant
-    </div>
+    <div class="center" style="color:#666;margin-bottom:14px;">Internal AI Assistant</div>
     """,
     unsafe_allow_html=True
 )
@@ -454,20 +451,25 @@ with tool_cols[3]:
         st.session_state.tool_mode = "Dubizzle"
 
 st.markdown(
-    f"<h3 class='center' style='margin-top:18px;margin-bottom:6px; color:white; text-shadow:0 6px 18px rgba(0,0,0,0.35);'>{st.session_state.tool_mode} Assistant</h3>",
+    f"<h3 class='center' style='margin-top:18px;margin-bottom:6px;'>{st.session_state.tool_mode} Assistant</h3>",
     unsafe_allow_html=True
 )
 
 # =====================================================
-# ANSWER MODE BUTTONS (CENTERED)
+# ANSWER MODE BUTTONS (CENTERED) + smaller
 # =====================================================
 mode_cols = st.columns([5, 2, 2, 5])
 with mode_cols[1]:
+    st.markdown("<div class='small-btn'>", unsafe_allow_html=True)
     if st.button("Ultra-Fast", use_container_width=True, key="btn_mode_fast"):
         st.session_state.answer_mode = "Ultra-Fast"
+    st.markdown("</div>", unsafe_allow_html=True)
+
 with mode_cols[2]:
+    st.markdown("<div class='small-btn'>", unsafe_allow_html=True)
     if st.button("Thinking", use_container_width=True, key="btn_mode_thinking"):
         st.session_state.answer_mode = "Thinking"
+    st.markdown("</div>", unsafe_allow_html=True)
 
 st.markdown("<div style='height:16px;'></div>", unsafe_allow_html=True)
 
