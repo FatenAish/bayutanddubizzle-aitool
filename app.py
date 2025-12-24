@@ -10,71 +10,79 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_core.documents import Document
 
 # =====================================================
-# PAGE CONFIG (must be first Streamlit call)
+# PAGE CONFIG
 # =====================================================
-st.set_page_config(page_title="Bayut & Dubizzle AI Content Assistant", layout="wide")
+st.set_page_config(page_title="Bayut & Dubizzle AI Assistant", layout="wide")
 
 # =====================================================
-# ACCESS CODE GATE (FIRST SCREEN)
+# QUERY PARAMS (compat)
 # =====================================================
-ACCESS_CODE = os.getenv("ACCESS_CODE", "").strip()
-REQUIRE_CODE = os.getenv("REQUIRE_CODE", "0").strip() == "1"
-
 def _get_qp():
-    # compatibility across streamlit versions
     try:
-        return st.query_params  # newer
+        return st.query_params  # newer Streamlit
     except Exception:
         return st.experimental_get_query_params()  # older
 
 def _set_qp(**kwargs):
     try:
+        st.query_params.clear()
         st.query_params.update(kwargs)
     except Exception:
         st.experimental_set_query_params(**kwargs)
 
+def _qp_get(qp, key: str):
+    try:
+        v = qp.get(key)
+        if isinstance(v, list):
+            return v[0] if v else None
+        return v
+    except Exception:
+        return None
+
+# =====================================================
+# ACCESS CODE GATE
+# =====================================================
+ACCESS_CODE = os.getenv("ACCESS_CODE", "").strip()
+REQUIRE_CODE = os.getenv("REQUIRE_CODE", "0").strip() == "1"
+
 if REQUIRE_CODE and ACCESS_CODE:
     st.session_state.setdefault("unlocked", False)
-
     qp = _get_qp()
-    qp_code = None
-    try:
-        qp_code = qp.get("code")
-        if isinstance(qp_code, list):
-            qp_code = qp_code[0] if qp_code else None
-    except Exception:
-        qp_code = None
 
-    # Optional auto-unlock via URL: ?code=XXXX
+    # Optional: auto-unlock via URL ?code=XXXX
+    qp_code = _qp_get(qp, "code")
     if qp_code and qp_code == ACCESS_CODE:
         st.session_state["unlocked"] = True
-        # remove the code param after unlock (cleaner)
-        try:
-            _set_qp()
-        except Exception:
-            pass
+        _set_qp()  # clear params
 
     if not st.session_state["unlocked"]:
         st.markdown(
-    """
-    <style>
-      section.main > div.block-container{ max-width: 520px; padding-top: 6rem; }
-      .gate-wrap{ text-align:center; }
-      .gate-title{ font-size: 34px; font-weight: 900; margin-bottom: 6px; }
-      .gate-sub{ color:#666; margin-bottom: 22px; }
-    </style>
-    <div class="gate-wrap">
-      <div class="gate-title">
-        <span style="color:#0E8A6D;">Bayut</span> &
-        <span style="color:#D71920;">Dubizzle</span> AI Assistant
-      </div>
-      <div class="gate-sub">Internal AI Assistant – Access Required</div>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
+            """
+            <style>
+              section.main > div.block-container{ max-width: 520px; padding-top: 6rem; }
+              .gate-wrap{ text-align:center; }
+              .gate-title{ font-size: 34px; font-weight: 900; margin-bottom: 6px; }
+              .gate-sub{ color:#666; margin-bottom: 22px; }
+            </style>
+            <div class="gate-wrap">
+              <div class="gate-title">
+                <span style="color:#0E8A6D;">Bayut</span> &
+                <span style="color:#D71920;">Dubizzle</span> AI Assistant
+              </div>
+              <div class="gate-sub">Internal AI Assistant – Access Required</div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
-        code = st.text_input("Access code", type="password", placeholder="Enter access code", label_visibility="collapsed")
+        code = st.text_input(
+            "Access code",
+            type="password",
+            placeholder="Enter access code",
+            label_visibility="collapsed",
+            key="gate_code_input",
+        )
+
         c1, c2, c3 = st.columns([1, 2, 1])
         with c2:
             unlock = st.button("Unlock", use_container_width=True)
@@ -95,24 +103,68 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 
 # =====================================================
-# CSS
+# CSS (includes Copilot-style hero)
 # =====================================================
 st.markdown(
     """
     <style>
       section.main > div.block-container{
-        max-width: 980px;
+        max-width: 1050px;
         padding-top: 2rem;
         padding-bottom: 2rem;
       }
       .center { text-align:center; }
 
+      /* Hero (Copilot-like) */
+      .hero {
+        border-radius: 22px;
+        padding: 70px 30px;
+        margin: 10px auto 26px;
+        text-align: center;
+        color: white;
+        position: relative;
+        overflow: hidden;
+        background:
+          radial-gradient(1200px 600px at 50% 0%, rgba(255,255,255,0.22), rgba(255,255,255,0) 55%),
+          linear-gradient(180deg, #1f7fa1 0%, #176d8d 35%, #0e5b76 100%);
+      }
+      .hero h1{
+        margin: 0;
+        font-size: 44px;
+        font-weight: 900;
+        letter-spacing: -0.5px;
+      }
+      .hero p{
+        margin: 10px 0 0;
+        opacity: 0.9;
+        font-size: 16px;
+      }
+      .pills{
+        margin-top: 26px;
+        display: flex;
+        gap: 12px;
+        justify-content: center;
+        flex-wrap: wrap;
+      }
+      .pill{
+        background: rgba(255,255,255,0.88);
+        color: #1f2937;
+        padding: 10px 16px;
+        border-radius: 999px;
+        text-decoration: none;
+        font-weight: 700;
+        border: 1px solid rgba(255,255,255,0.7);
+        box-shadow: 0 8px 22px rgba(0,0,0,0.12);
+      }
+      .pill:hover{ background: rgba(255,255,255,0.97); }
+
+      /* Chat bubbles */
       .q-bubble{
         padding: 10px 14px;
         border-radius: 14px;
         max-width: 85%;
         width: fit-content;
-        font-weight: 600;
+        font-weight: 700;
         margin: 10px 0 8px;
         border: 1px solid rgba(0,0,0,0.06);
       }
@@ -138,6 +190,17 @@ st.markdown(
 st.session_state.setdefault("tool_mode", "General")
 st.session_state.setdefault("answer_mode", "Ultra-Fast")
 st.session_state.setdefault("chat", {"General": [], "Bayut": [], "Dubizzle": []})
+st.session_state.setdefault("q_input", "")
+
+# =====================================================
+# PREFILL FROM HERO PILL (query param p)
+# =====================================================
+qp = _get_qp()
+preset = _qp_get(qp, "p")
+if preset:
+    # Fill the input and clear param
+    st.session_state["q_input"] = preset
+    _set_qp()
 
 # =====================================================
 # HELPERS
@@ -202,7 +265,7 @@ def best_sop_match(user_query: str):
     tokens = [x for x in re.split(r"[^a-z0-9]+", t) if x]
     topic_tokens = [x for x in tokens if x not in {"download", "sop", "file", "the", "a", "an"}]
 
-    # If they said only: download sop -> show all SOPs
+    # download sop (no topic) -> show all
     if ("download" in tokens and "sop" in tokens) and (not topic_tokens):
         return all_sops
 
@@ -211,7 +274,6 @@ def best_sop_match(user_query: str):
     def pick_by_contains(substrs):
         return [f for f in all_sops if all(s in f.lower() for s in substrs)]
 
-    # newsletter
     if any(k in t for k in ["newsletter", "newsletters"]):
         bay = pick_by_contains(["bayut", "newsletters"])
         dub = pick_by_contains(["dubizzle", "newsletters"])
@@ -221,11 +283,9 @@ def best_sop_match(user_query: str):
             return dub or []
         return (bay + dub) if (bay or dub) else []
 
-    # algolia
     if any(k in t for k in ["algolia", "location", "locations"]):
         return pick_by_contains(["algolia", "locations"]) or []
 
-    # PM campaigns
     if any(k in t for k in ["pm", "campaign", "campaigns", "performance", "marketing"]):
         bay = pick_by_contains(["bayut", "campaign"])
         dub = pick_by_contains(["dubizzle", "campaign"])
@@ -235,23 +295,16 @@ def best_sop_match(user_query: str):
             return dub or []
         return (bay + dub) if (bay or dub) else []
 
-    # social posting
     if any(k in t for k in ["social", "instagram", "posting"]):
         return pick_by_contains(["social", "posting"]) or []
 
-    # both corrections/updates
-    if any(k in t for k in ["correction", "corrections", "update", "updates", "listing", "listings", "project", "projects"]):
-        return [f for f in all_sops if "corrections" in f.lower() or "updates" in f.lower()] or []
-
-    # fallback: keyword match
     matches = []
     for f in all_sops:
         fn = f.lower()
         if any(tok in fn for tok in topic_tokens):
             matches.append(f)
 
-    # if nothing matched, do NOT dump everything; return empty (requested by you)
-    return matches
+    return matches  # do NOT dump all if no match
 
 def format_thinking_answer(primary: str, extras: list[str]) -> str:
     out = []
@@ -274,7 +327,7 @@ def get_embeddings():
     return HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
 # =====================================================
-# BUILD STORES (Embed question only)
+# BUILD STORES (embed question only)
 # =====================================================
 @st.cache_resource
 def build_stores():
@@ -297,7 +350,6 @@ def build_stores():
             continue
 
         bucket = bucket_from_filename(fname)
-
         for q, a in pairs:
             doc = Document(page_content=q, metadata={"answer": a, "source": fname, "bucket": bucket})
             docs_all.append(doc)
@@ -324,7 +376,7 @@ def pick_store(mode: str):
     return VS_ALL
 
 # =====================================================
-# HEADER
+# HEADER (your existing main UI)
 # =====================================================
 st.markdown(
     """
@@ -338,7 +390,7 @@ st.markdown(
 )
 
 # =====================================================
-# TOOL MODE BUTTONS (CENTERED)
+# TOOL MODE BUTTONS
 # =====================================================
 tool_cols = st.columns([2, 3, 3, 3, 2])
 with tool_cols[1]:
@@ -357,7 +409,7 @@ st.markdown(
 )
 
 # =====================================================
-# ANSWER MODE BUTTONS (CENTERED)
+# ANSWER MODE BUTTONS (centered)
 # =====================================================
 mode_cols = st.columns([5, 2, 2, 5])
 with mode_cols[1]:
@@ -367,30 +419,60 @@ with mode_cols[2]:
     if st.button("Thinking", use_container_width=True, key="btn_mode_thinking"):
         st.session_state.answer_mode = "Thinking"
 
-st.markdown("<div style='height:16px;'></div>", unsafe_allow_html=True)
+st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
+
+# =====================================================
+# COPILOT-LIKE WELCOME HERO (only when no history in THIS mode)
+# =====================================================
+if len(st.session_state.chat.get(st.session_state.tool_mode, [])) == 0 and not st.session_state.get("q_input", "").strip():
+    st.markdown(
+        """
+        <div class="hero">
+          <h1>What would you like to do first?</h1>
+          <p>Choose a quick action, or type your question below.</p>
+          <div class="pills">
+            <a class="pill" href="?p=hello">Say hello</a>
+            <a class="pill" href="?p=download%20newsletter%20sop">Download newsletter SOP</a>
+            <a class="pill" href="?p=what%20is%20algolia%20locations">Algolia Locations</a>
+            <a class="pill" href="?p=who%20is%20responsible%20for%20the%20app">Who owns the app?</a>
+            <a class="pill" href="?p=how%20do%20i%20ask%20questions%20to%20get%20best%20answers">How to ask</a>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
 # =====================================================
 # INPUT + ASK/CLEAR
 # =====================================================
 outer = st.columns([1, 6, 1])
 with outer[1]:
-    with st.form("ask_form", clear_on_submit=True):
-        q = st.text_input("", placeholder="Type your question here…", label_visibility="collapsed")
+    with st.form("ask_form", clear_on_submit=False):
+        q = st.text_input(
+            "",
+            placeholder="Type your question here…",
+            label_visibility="collapsed",
+            key="q_input",
+        )
         bcols = st.columns([1, 1])
         ask = bcols[0].form_submit_button("Ask", use_container_width=True)
         clear = bcols[1].form_submit_button("Clear chat", use_container_width=True)
 
 if clear:
     st.session_state.chat[st.session_state.tool_mode] = []
+    st.session_state["q_input"] = ""
     st.rerun()
 
 # =====================================================
 # ANSWER
 # =====================================================
-if ask and q:
+if ask and st.session_state.get("q_input", "").strip():
+    q = st.session_state["q_input"].strip()
+
     sop_files = best_sop_match(q)
     if sop_files:
         st.session_state.chat[st.session_state.tool_mode].append({"type": "download", "q": q, "files": sop_files})
+        st.session_state["q_input"] = ""
         st.rerun()
 
     thinking = (st.session_state.answer_mode == "Thinking")
@@ -398,9 +480,11 @@ if ask and q:
 
     if st.session_state.tool_mode == "Bayut" and vs is None:
         st.session_state.chat["Bayut"].append({"type": "qa", "q": q, "a": "No Bayut/MyBayut Q&A files detected."})
+        st.session_state["q_input"] = ""
         st.rerun()
     if st.session_state.tool_mode == "Dubizzle" and vs is None:
         st.session_state.chat["Dubizzle"].append({"type": "qa", "q": q, "a": "No dubizzle Q&A files detected."})
+        st.session_state["q_input"] = ""
         st.rerun()
 
     if thinking:
@@ -425,10 +509,11 @@ if ask and q:
         final = answers[0] if not thinking else format_thinking_answer(answers[0], answers[1:])
 
     st.session_state.chat[st.session_state.tool_mode].append({"type": "qa", "q": q, "a": final})
+    st.session_state["q_input"] = ""
     st.rerun()
 
 # =====================================================
-# CHAT HISTORY (ONLY CURRENT MODE)
+# CHAT HISTORY (only current mode)
 # =====================================================
 bubble_class = {
     "General": "q-general",
