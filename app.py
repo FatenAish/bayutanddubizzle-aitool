@@ -1,9 +1,7 @@
 import os
 import re
 import html
-import time
 import base64
-import hashlib
 import streamlit as st
 
 from langchain_community.vectorstores import FAISS
@@ -19,36 +17,40 @@ st.set_page_config(
 )
 
 # =====================================================
-# ✅ CORRECT PATHS (THIS FIXES EVERYTHING)
+# PATHS (STREAMLIT CLOUD SAFE)
 # =====================================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 
-BG_IMAGE_PATH = os.path.join(ASSETS_DIR, "ChatGPT Image Dec 30, 2025, 03_14_09 PM.png")
+BG_IMAGE = "ChatGPT Image Dec 30, 2025, 03_14_09 PM.png"
+BG_IMAGE_PATH = os.path.join(ASSETS_DIR, BG_IMAGE)
 
 # =====================================================
-# ✅ FORCE BACKGROUND IMAGE (NO CACHE)
+# 🔥 FORCE BACKGROUND IMAGE (TOP-ALIGNED)
 # =====================================================
 if not os.path.isfile(BG_IMAGE_PATH):
-    st.error("❌ assets/background.png NOT FOUND")
+    st.error(f"❌ assets/{BG_IMAGE} NOT FOUND")
 else:
     with open(BG_IMAGE_PATH, "rb") as f:
-        bg_b64 = base64.b64encode(f.read()).decode()
+        bg_b64 = base64.b64encode(f.read()).decode("utf-8")
 
     st.markdown(
         f"""
         <style>
-        /* FULL PAGE BACKGROUND */
-        html, body, .stApp {{
-            background-image: url("data:image/png;base64,{bg_b64}") !important;
-            background-size: cover !important;
-            background-position: center top !important;
-            background-repeat: no-repeat !important;
-            background-attachment: fixed !important;
+        /* REMOVE ALL DEFAULT BACKGROUNDS */
+        html, body {{
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            background: transparent !important;
         }}
 
-        /* REMOVE STREAMLIT DEFAULT BACKGROUND */
+        .stApp {{
+            background: url("data:image/png;base64,{bg_b64}") no-repeat top center fixed !important;
+            background-size: cover !important;
+        }}
+
         [data-testid="stAppViewContainer"] {{
             background: transparent !important;
         }}
@@ -57,17 +59,19 @@ else:
             background: transparent !important;
         }}
 
-        /* CONTENT CARD (TEXT SAFE AREA) */
+        /* CONTENT CARD (TEXT SAFE ZONE) */
         section.main > div.block-container {{
             max-width: 980px !important;
+            margin-top: 2rem !important;
             padding: 2.5rem !important;
             background: rgba(255,255,255,0.95) !important;
-            border-radius: 24px !important;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.2) !important;
-            backdrop-filter: blur(8px);
+            border-radius: 22px !important;
+            box-shadow: 0 25px 70px rgba(0,0,0,0.25) !important;
         }}
 
-        .center {{ text-align: center; }}
+        .center {{
+            text-align: center;
+        }}
 
         .q-bubble {{
             padding: 10px 14px;
@@ -75,11 +79,8 @@ else:
             max-width: 85%;
             font-weight: 600;
             margin: 10px 0 8px;
+            background: #f2f2f2;
         }}
-
-        .q-general {{ background:#f2f2f2; }}
-        .q-bayut {{ background:#e6f4ef; }}
-        .q-dubizzle {{ background:#fdeaea; }}
 
         .answer {{
             margin-left: 6px;
@@ -138,7 +139,7 @@ def get_embeddings():
     )
 
 # =====================================================
-# BUILD STORES
+# BUILD VECTOR STORES
 # =====================================================
 @st.cache_resource
 def build_stores():
@@ -227,6 +228,12 @@ if st.button("Ask") and q:
 # CHAT
 # =====================================================
 for item in reversed(st.session_state.chat[st.session_state.tool_mode]):
-    st.markdown(f"<div class='q-bubble'>{html.escape(item['q'])}</div>", unsafe_allow_html=True)
-    st.markdown(f"<div class='answer'>{item['a']}</div>", unsafe_allow_html=True)
+    st.markdown(
+        f"<div class='q-bubble'>{html.escape(item['q'])}</div>",
+        unsafe_allow_html=True
+    )
+    st.markdown(
+        f"<div class='answer'>{item['a']}</div>",
+        unsafe_allow_html=True
+    )
     st.markdown("---")
