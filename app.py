@@ -24,39 +24,25 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 
 # =====================================================
-# FIND BACKGROUND IMAGE (AUTO)
+# FIND HERO IMAGE (AUTO)
 # =====================================================
-def find_bg():
-    candidates = []
+def find_hero_image():
+    for folder in [ASSETS_DIR, DATA_DIR, BASE_DIR]:
+        if os.path.isdir(folder):
+            for f in os.listdir(folder):
+                if f.lower().endswith((".png", ".jpg", ".jpeg")):
+                    return os.path.join(folder, f)
+    return None
 
-    if os.path.isdir(ASSETS_DIR):
-        candidates += [
-            os.path.join(ASSETS_DIR, f)
-            for f in os.listdir(ASSETS_DIR)
-            if f.lower().endswith((".png", ".jpg", ".jpeg"))
-        ]
+HERO_PATH = find_hero_image()
+HERO_B64 = ""
 
-    if os.path.isdir(DATA_DIR):
-        candidates += [
-            os.path.join(DATA_DIR, f)
-            for f in os.listdir(DATA_DIR)
-            if f.lower().endswith((".png", ".jpg", ".jpeg"))
-        ]
-
-    return candidates[0] if candidates else None
-
-
-BG_PATH = find_bg()
-
-if BG_PATH:
-    with open(BG_PATH, "rb") as f:
-        BG_BASE64 = base64.b64encode(f.read()).decode("utf-8")
-    BG_CSS = f"url('data:image/png;base64,{BG_BASE64}')"
-else:
-    BG_CSS = "none"
+if HERO_PATH:
+    with open(HERO_PATH, "rb") as f:
+        HERO_B64 = base64.b64encode(f.read()).decode("utf-8")
 
 # =====================================================
-# GLOBAL CSS (BACKGROUND IN MIDDLE)
+# GLOBAL CSS (HERO STYLE – CLEAN)
 # =====================================================
 st.markdown(
     f"""
@@ -66,41 +52,48 @@ st.markdown(
     }}
 
     .stApp {{
-        background: transparent !important;
+        background: #ffffff !important;
     }}
 
     [data-testid="stAppViewContainer"] {{
+        background: #ffffff !important;
+    }}
+
+    /* HERO IMAGE */
+    .hero {{
+        position: absolute;
+        top: 80px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 1100px;
+        max-width: 95vw;
+        height: 360px;
+        background-image: url("data:image/png;base64,{HERO_B64}");
+        background-repeat: no-repeat;
+        background-size: contain;
+        background-position: center top;
+        opacity: 0.22;
+        z-index: 0;
+        pointer-events: none;
+    }}
+
+    /* MAIN CONTENT */
+    section.main > div.block-container {{
+        position: relative;
+        z-index: 2;
+        max-width: 980px !important;
+        padding-top: 4rem !important;
+        padding-bottom: 3rem !important;
         background: transparent !important;
     }}
 
-    /* BACKGROUND IMAGE LAYER */
-    body::before {{
-        content: "";
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        width: 1200px;
-        max-width: 95vw;
-        aspect-ratio: 16 / 9;
-        background-image: {BG_CSS};
-        background-size: contain;
-        background-repeat: no-repeat;
-        background-position: center;
-        z-index: -1;
-        pointer-events: none;
-        opacity: 1;
-    }}
-
-    /* CONTENT CARD */
-    section.main > div.block-container {{
-        max-width: 980px !important;
-        padding: 2.5rem !important;
-        margin-top: 10vh !important;
-        background: rgba(255,255,255,0.95) !important;
-        border-radius: 22px !important;
-        box-shadow: 0 20px 60px rgba(0,0,0,0.18) !important;
-        backdrop-filter: blur(8px);
+    /* CARD */
+    .ui-card {{
+        background: #ffffff;
+        padding: 2rem;
+        border-radius: 20px;
+        box-shadow: 0 16px 40px rgba(0,0,0,0.08);
+        margin-top: 2rem;
     }}
 
     .center {{
@@ -113,8 +106,8 @@ st.markdown(
         max-width: 85%;
         font-weight: 600;
         margin: 10px 0 8px;
-        border: 1px solid rgba(0,0,0,0.06);
         background: #f2f2f2;
+        border: 1px solid rgba(0,0,0,0.05);
     }}
 
     .answer {{
@@ -127,6 +120,8 @@ st.markdown(
         border-radius: 10px;
     }}
     </style>
+
+    <div class="hero"></div>
     """,
     unsafe_allow_html=True
 )
@@ -179,6 +174,9 @@ def build_stores():
     emb = get_embeddings()
     stores = {"General": [], "Bayut": [], "Dubizzle": []}
 
+    if not os.path.isdir(DATA_DIR):
+        return {k: None for k in stores}
+
     for f in os.listdir(DATA_DIR):
         if not f.lower().endswith(".txt") or is_sop_file(f):
             continue
@@ -227,9 +225,12 @@ st.markdown(
 )
 
 # =====================================================
-# INPUT
+# UI CARD START
 # =====================================================
+st.markdown("<div class='ui-card'>", unsafe_allow_html=True)
+
 q = st.text_input("Type your question here…")
+
 if st.button("Ask") and q:
     vs = VECTOR_STORES.get(st.session_state.tool_mode)
     if vs:
@@ -246,10 +247,9 @@ if st.button("Ask") and q:
         "a": answer
     })
 
-# =====================================================
-# CHAT
-# =====================================================
 for item in reversed(st.session_state.chat[st.session_state.tool_mode]):
     st.markdown(f"<div class='q-bubble'>{html.escape(item['q'])}</div>", unsafe_allow_html=True)
     st.markdown(f"<div class='answer'>{item['a']}</div>", unsafe_allow_html=True)
     st.markdown("---")
+
+st.markdown("</div>", unsafe_allow_html=True)
