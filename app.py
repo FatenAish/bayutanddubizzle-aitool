@@ -25,7 +25,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 
-BG_IMAGE_PATH = os.path.join(ASSETS_DIR, "background.png")
+BG_IMAGE_PATH = os.path.join(ASSETS_DIR, "ChatGPT Image Dec 30, 2025, 03_14_09 PM.png")
 
 # =====================================================
 # ✅ FORCE BACKGROUND IMAGE (NO CACHE)
