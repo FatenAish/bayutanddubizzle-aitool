@@ -84,99 +84,80 @@ _BG_URI = _img_to_data_uri(_BG_PATH, os.path.getmtime(_BG_PATH)) if _BG_PATH els
 st.markdown(
     f"""
     <style>
-      :root {{
-        --app-bg: {bg_value};
-      }}
+    /* ===== GLOBAL BACKGROUND LAYER ===== */
+    body::before {{
+        content: "";
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 1200px;              /* 👈 control size here */
+        height: auto;
+        aspect-ratio: 16 / 9;
+        background-image: {bg_value};
+        background-size: contain;
+        background-repeat: no-repeat;
+        background-position: center center;
+        z-index: -1;
+        opacity: 1;
+        pointer-events: none;
+    }}
 
-      html, body {{
-        height: 100%;
-        min-height: 100%;
-        background: var(--app-bg) !important;
-        background-size: contain !important;          /* ✅ no cropping */
-        background-position: center center !important;/* ✅ middle */
-        background-repeat: no-repeat !important;
-        background-attachment: fixed !important;
-        background-color: #ffffff !important;         /* ✅ clean white around image */
-      }}
+    html, body {{
+        background: #ffffff !important;
+    }}
 
-      .stApp {{
-        min-height: 100vh !important;
-        background: var(--app-bg) !important;
-        background-size: contain !important;          /* ✅ no cropping */
-        background-position: center center !important;/* ✅ middle */
-        background-repeat: no-repeat !important;
-        background-attachment: fixed !important;
-        background-color: #ffffff !important;
-      }}
-
-      [data-testid="stAppViewContainer"] {{
-        min-height: 100vh !important;
-        background: var(--app-bg) !important;
-        background-size: contain !important;          /* ✅ no cropping */
-        background-position: center center !important;/* ✅ middle */
-        background-repeat: no-repeat !important;
-        background-attachment: fixed !important;
-        background-color: #ffffff !important;
-      }}
-
-      [data-testid="stAppViewContainer"] > .main {{
-        min-height: 100vh !important;
+    .stApp {{
         background: transparent !important;
-      }}
+    }}
 
-      [data-testid="stHeader"] {{
+    [data-testid="stAppViewContainer"] {{
         background: transparent !important;
-      }}
+    }}
 
-      section.main > div.block-container {{
+    [data-testid="stHeader"] {{
+        background: transparent !important;
+    }}
+
+    /* ===== CONTENT CARD (TEXT SAFE AREA) ===== */
+    section.main > div.block-container {{
         max-width: 980px !important;
-        padding-top: 2rem !important;
-        padding-bottom: 2rem !important;
+        padding: 2.5rem !important;
+        margin-top: 10vh !important;
 
-        /* ✅ push content down a bit so the bg “sits behind” nicely */
-        margin-top: 6vh !important;
-
-        background: rgba(255,255,255,0.92) !important;
-        border: 1px solid rgba(0,0,0,0.06) !important;
+        background: rgba(255,255,255,0.95) !important;
         border-radius: 22px !important;
-        backdrop-filter: blur(10px) !important;
-        -webkit-backdrop-filter: blur(10px) !important;
         box-shadow: 0 20px 60px rgba(0,0,0,0.18) !important;
-      }}
+        backdrop-filter: blur(8px);
+    }}
 
-      .center {{ text-align:center; }}
+    .center {{ text-align:center; }}
 
-      .q-bubble {{
+    .q-bubble {{
         padding: 10px 14px;
         border-radius: 14px;
         max-width: 85%;
-        width: fit-content;
         font-weight: 600;
         margin: 10px 0 8px;
         border: 1px solid rgba(0,0,0,0.06);
-      }}
-      .q-general {{ background:#f2f2f2; }}
-      .q-bayut {{ background:#e6f4ef; }}
-      .q-dubizzle {{ background:#fdeaea; }}
+    }}
 
-      .answer {{
+    .q-general {{ background:#f2f2f2; }}
+    .q-bayut {{ background:#e6f4ef; }}
+    .q-dubizzle {{ background:#fdeaea; }}
+
+    .answer {{
         margin-left: 6px;
         margin-bottom: 14px;
         line-height: 1.6;
-      }}
+    }}
 
-      div.stButton > button {{ border-radius: 10px; }}
-
-      .small-btn div.stButton > button {{
-        padding-top: 0.35rem !important;
-        padding-bottom: 0.35rem !important;
-        font-size: 0.95rem !important;
-      }}
+    button {{
+        border-radius: 10px !important;
+    }}
     </style>
     """,
     unsafe_allow_html=True
-)
-
 )
 # =====================================================
 # ACCESS CODE GATE (FIRST SCREEN)
