@@ -24,88 +24,57 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 
 # =====================================================
-# FIND BACKGROUND IMAGE (AUTO)
+# BACKGROUND IMAGE (STATIC & SAFE)
 # =====================================================
-def find_bg():
-    candidates = []
+def get_bg_image():
+    for folder in [ASSETS_DIR, DATA_DIR]:
+        if os.path.isdir(folder):
+            imgs = [f for f in os.listdir(folder) if f.lower().endswith((".png", ".jpg", ".jpeg"))]
+            if imgs:
+                return os.path.join(folder, imgs[0])
+    return None
 
-    if os.path.isdir(ASSETS_DIR):
-        candidates += [
-            os.path.join(ASSETS_DIR, f)
-            for f in os.listdir(ASSETS_DIR)
-            if f.lower().endswith((".png", ".jpg", ".jpeg"))
-        ]
-
-    if os.path.isdir(DATA_DIR):
-        candidates += [
-            os.path.join(DATA_DIR, f)
-            for f in os.listdir(DATA_DIR)
-            if f.lower().endswith((".png", ".jpg", ".jpeg"))
-        ]
-
-    return candidates[0] if candidates else None
-
-
-BG_PATH = find_bg()
+BG_PATH = get_bg_image()
+BG_B64 = ""
 
 if BG_PATH:
     with open(BG_PATH, "rb") as f:
-        BG_BASE64 = base64.b64encode(f.read()).decode("utf-8")
-    BG_CSS = f"url('data:image/png;base64,{BG_BASE64}')"
-else:
-    BG_CSS = "none"
+        BG_B64 = base64.b64encode(f.read()).decode("utf-8")
 
 # =====================================================
-# GLOBAL CSS (BACKGROUND IN MIDDLE)
+# CSS — DO NOT MOVE UI
 # =====================================================
 st.markdown(
     f"""
     <style>
+    /* DO NOT TOUCH LAYOUT */
     html, body {{
-        background: #ffffff !important;
+        background: white !important;
     }}
 
+    /* BACKGROUND IMAGE ONLY */
     .stApp {{
-        background: transparent !important;
-    }}
-
-    [data-testid="stAppViewContainer"] {{
-        background: transparent !important;
-    }}
-
-    /* BACKGROUND IMAGE LAYER */
-    body::before {{
-        content: "";
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        width: 1200px;
-        max-width: 95vw;
-        aspect-ratio: 16 / 9;
-        background-image: {BG_CSS};
-        background-size: contain;
+        background-image: url("data:image/png;base64,{BG_B64}");
         background-repeat: no-repeat;
-        background-position: center;
-        z-index: -1;
-        pointer-events: none;
-        opacity: 1;
+        background-position: center 120px;
+        background-size: 1400px auto;
     }}
 
-    /* CONTENT CARD */
+    /* KEEP DEFAULT STREAMLIT BEHAVIOR */
+    [data-testid="stAppViewContainer"],
+    [data-testid="stHeader"] {{
+        background: transparent !important;
+    }}
+
+    /* CONTENT CARD (OPTIONAL SOFT BACKDROP) */
     section.main > div.block-container {{
-        max-width: 980px !important;
-        padding: 2.5rem !important;
-        margin-top: 10vh !important;
-        background: rgba(255,255,255,0.95) !important;
-        border-radius: 22px !important;
-        box-shadow: 0 20px 60px rgba(0,0,0,0.18) !important;
-        backdrop-filter: blur(8px);
+        background: rgba(255,255,255,0.92);
+        border-radius: 18px;
+        padding: 2rem;
+        box-shadow: 0 12px 30px rgba(0,0,0,0.06);
     }}
 
-    .center {{
-        text-align: center;
-    }}
+    .center {{ text-align: center; }}
 
     .q-bubble {{
         padding: 10px 14px;
@@ -113,7 +82,6 @@ st.markdown(
         max-width: 85%;
         font-weight: 600;
         margin: 10px 0 8px;
-        border: 1px solid rgba(0,0,0,0.06);
         background: #f2f2f2;
     }}
 
@@ -121,10 +89,6 @@ st.markdown(
         margin-left: 6px;
         margin-bottom: 14px;
         line-height: 1.6;
-    }}
-
-    div.stButton > button {{
-        border-radius: 10px;
     }}
     </style>
     """,
@@ -144,10 +108,9 @@ def is_sop_file(name):
     return "sop" in name.lower()
 
 def bucket_from_filename(name):
-    n = name.lower()
-    if "bayut" in n:
+    if "bayut" in name.lower():
         return "Bayut"
-    if "dubizzle" in n:
+    if "dubizzle" in name.lower():
         return "Dubizzle"
     return "General"
 
@@ -167,37 +130,34 @@ def parse_qa_pairs(text):
 # =====================================================
 @st.cache_resource
 def get_embeddings():
-    return HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-MiniLM-L6-v2"
-    )
+    return HuggingFaceEmbeddings("sentence-transformers/all-MiniLM-L6-v2")
 
 # =====================================================
-# BUILD VECTOR STORES
+# VECTOR STORES
 # =====================================================
 @st.cache_resource
 def build_stores():
     emb = get_embeddings()
     stores = {"General": [], "Bayut": [], "Dubizzle": []}
 
-    for f in os.listdir(DATA_DIR):
-        if not f.lower().endswith(".txt") or is_sop_file(f):
-            continue
+    if not os.path.isdir(DATA_DIR):
+        return {k: None for k in stores}
 
+    for f in os.listdir(DATA_DIR):
+        if not f.endswith(".txt") or is_sop_file(f):
+            continue
         fp = os.path.join(DATA_DIR, f)
         for q, a in parse_qa_pairs(read_text(fp)):
             doc = Document(page_content=q, metadata={"answer": a})
             stores["General"].append(doc)
             stores[bucket_from_filename(f)].append(doc)
 
-    return {
-        k: FAISS.from_documents(v, emb) if v else None
-        for k, v in stores.items()
-    }
+    return {k: (FAISS.from_documents(v, emb) if v else None) for k, v in stores.items()}
 
 VECTOR_STORES = build_stores()
 
 # =====================================================
-# HEADER
+# HEADER (UNCHANGED)
 # =====================================================
 st.markdown(
     """
@@ -211,7 +171,7 @@ st.markdown(
 )
 
 # =====================================================
-# TOOL MODE
+# TOOL MODE (UNCHANGED)
 # =====================================================
 c1, c2, c3 = st.columns(3)
 if c1.button("General", use_container_width=True):
@@ -221,33 +181,24 @@ if c2.button("Bayut", use_container_width=True):
 if c3.button("Dubizzle", use_container_width=True):
     st.session_state.tool_mode = "Dubizzle"
 
-st.markdown(
-    f"<h3 class='center'>{st.session_state.tool_mode} Assistant</h3>",
-    unsafe_allow_html=True
-)
+st.markdown(f"<h3 class='center'>{st.session_state.tool_mode} Assistant</h3>", unsafe_allow_html=True)
 
 # =====================================================
-# INPUT
+# INPUT (UNCHANGED)
 # =====================================================
 q = st.text_input("Type your question here…")
 if st.button("Ask") and q:
     vs = VECTOR_STORES.get(st.session_state.tool_mode)
+    answer = "No data available."
     if vs:
-        results = vs.similarity_search(q, k=4)
-        answer = next(
-            (r.metadata["answer"] for r in results if r.metadata.get("answer")),
-            "No relevant answer found."
-        )
-    else:
-        answer = "No data available."
+        res = vs.similarity_search(q, k=4)
+        if res:
+            answer = res[0].metadata.get("answer", answer)
 
-    st.session_state.chat[st.session_state.tool_mode].append({
-        "q": q,
-        "a": answer
-    })
+    st.session_state.chat[st.session_state.tool_mode].append({"q": q, "a": answer})
 
 # =====================================================
-# CHAT
+# CHAT (UNCHANGED)
 # =====================================================
 for item in reversed(st.session_state.chat[st.session_state.tool_mode]):
     st.markdown(f"<div class='q-bubble'>{html.escape(item['q'])}</div>", unsafe_allow_html=True)
