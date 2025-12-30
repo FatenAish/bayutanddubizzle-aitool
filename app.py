@@ -251,7 +251,6 @@ st.markdown(
     f"<h3 class='center'>{st.session_state.tool_mode} Assistant</h3>",
     unsafe_allow_html=True
 )
-
 # =====================================================
 # INPUT
 # =====================================================
