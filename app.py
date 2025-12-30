@@ -26,73 +26,86 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 
 # =====================================================
-# 🔥 FORCE BACKGROUND IMAGE (NO CACHE / NO GUESSING)
+# 🔥 BACKGROUND IMAGE (LOCKED + SAFE)
 # =====================================================
 BG_IMAGE_PATH = os.path.join(ASSETS_DIR, "background.png")
 
-if os.path.isfile(BG_IMAGE_PATH):
-    with open(BG_IMAGE_PATH, "rb") as f:
-        bg_b64 = base64.b64encode(f.read()).decode("utf-8")
-
-    st.markdown(
-        f"""
-        <style>
-        html, body, .stApp {{
-            background: url("data:image/png;base64,{bg_b64}") no-repeat center center fixed !important;
-            background-size: cover !important;
-        }}
-
-        [data-testid="stAppViewContainer"] {{
-            background: transparent !important;
-        }}
-
-        [data-testid="stHeader"] {{
-            background: transparent !important;
-        }}
-
-        section.main > div.block-container {{
-            max-width: 980px !important;
-            padding: 2rem !important;
-            background: rgba(255,255,255,0.92) !important;
-            border-radius: 22px !important;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.18) !important;
-        }}
-
-        .center {{ text-align:center; }}
-
-        .q-bubble {{
-            padding: 10px 14px;
-            border-radius: 14px;
-            max-width: 85%;
-            font-weight: 600;
-            margin: 10px 0 8px;
-        }}
-
-        .q-general {{ background:#f2f2f2; }}
-        .q-bayut {{ background:#e6f4ef; }}
-        .q-dubizzle {{ background:#fdeaea; }}
-
-        .answer {{
-            margin-left: 6px;
-            margin-bottom: 14px;
-            line-height: 1.6;
-        }}
-
-        div.stButton > button {{
-            border-radius: 10px;
-        }}
-
-        .small-btn div.stButton > button {{
-            padding-top: 0.35rem !important;
-            padding-bottom: 0.35rem !important;
-            font-size: 0.95rem !important;
-        }}
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
-else:
+if not os.path.isfile(BG_IMAGE_PATH):
     st.error("❌ assets/background.png NOT FOUND")
+    st.stop()
+
+with open(BG_IMAGE_PATH, "rb") as f:
+    bg_b64 = base64.b64encode(f.read()).decode("utf-8")
+
+st.markdown(
+    f"""
+    <style>
+    /* ===== FULL PAGE BACKGROUND ===== */
+    html, body {{
+        background: url("data:image/png;base64,{bg_b64}") no-repeat center top fixed !important;
+        background-size: cover !important;
+        height: 100%;
+    }}
+
+    /* Streamlit root MUST be transparent */
+    .stApp {{
+        background: transparent !important;
+    }}
+
+    [data-testid="stAppViewContainer"] {{
+        background: transparent !important;
+    }}
+
+    [data-testid="stHeader"] {{
+        background: transparent !important;
+    }}
+
+    /* ===== CONTENT CARD (PROTECT UI) ===== */
+    section.main > div.block-container {{
+        max-width: 1000px !important;
+        margin-top: 160px !important;   /* ⬅ pushes content BELOW image */
+        padding: 2.5rem !important;
+
+        background: #ffffff !important;
+        border-radius: 28px !important;
+        box-shadow: 0 35px 90px rgba(0,0,0,0.30) !important;
+    }}
+
+    /* ===== TEXT SAFETY ===== */
+    h1, h2, h3, p, label {{
+        color: #111 !important;
+    }}
+
+    input, textarea {{
+        background: #f6f7f8 !important;
+    }}
+
+    .center {{
+        text-align: center;
+    }}
+
+    .q-bubble {{
+        padding: 10px 14px;
+        border-radius: 14px;
+        max-width: 85%;
+        font-weight: 600;
+        margin: 10px 0 8px;
+        background: #f2f2f2;
+    }}
+
+    .answer {{
+        margin-left: 6px;
+        margin-bottom: 14px;
+        line-height: 1.6;
+    }}
+
+    div.stButton > button {{
+        border-radius: 10px;
+    }}
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
 # =====================================================
 # ACCESS CODE GATE
@@ -106,9 +119,11 @@ if REQUIRE_CODE and ACCESS_CODE:
     if not st.session_state["unlocked"]:
         st.markdown(
             """
-            <div style="text-align:center">
-              <h2><span style="color:#0E8A6D;">Bayut</span> &
-              <span style="color:#D71920;">Dubizzle</span> AI Assistant</h2>
+            <div class="center">
+              <h2>
+                <span style="color:#0E8A6D;">Bayut</span> &
+                <span style="color:#D71920;">Dubizzle</span>
+              </h2>
               <p>Internal AI Assistant – Access Required</p>
             </div>
             """,
@@ -130,11 +145,10 @@ if REQUIRE_CODE and ACCESS_CODE:
 # SESSION STATE
 # =====================================================
 st.session_state.setdefault("tool_mode", "General")
-st.session_state.setdefault("answer_mode", "Ultra-Fast")
 st.session_state.setdefault("chat", {"General": [], "Bayut": [], "Dubizzle": []})
 
 # =====================================================
-# HELPERS (NO UNICODE ERRORS EVER)
+# HELPERS (NO UNICODE ERRORS)
 # =====================================================
 def is_sop_file(name):
     return "sop" in name.lower()
@@ -203,9 +217,9 @@ VS_ALL, VS_BAYUT, VS_DUBIZZLE = build_stores()
 
 def pick_store():
     return {
+        "General": VS_ALL,
         "Bayut": VS_BAYUT,
-        "Dubizzle": VS_DUBIZZLE,
-        "General": VS_ALL
+        "Dubizzle": VS_DUBIZZLE
     }[st.session_state.tool_mode]
 
 # =====================================================
@@ -233,7 +247,10 @@ if cols[1].button("Bayut", use_container_width=True):
 if cols[2].button("Dubizzle", use_container_width=True):
     st.session_state.tool_mode = "Dubizzle"
 
-st.markdown(f"<h3 class='center'>{st.session_state.tool_mode} Assistant</h3>", unsafe_allow_html=True)
+st.markdown(
+    f"<h3 class='center'>{st.session_state.tool_mode} Assistant</h3>",
+    unsafe_allow_html=True
+)
 
 # =====================================================
 # INPUT
