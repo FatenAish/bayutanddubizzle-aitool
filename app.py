@@ -218,6 +218,18 @@ st.markdown(
     f"<h3 class='center' style='margin-top:18px;margin-bottom:6px;'>{st.session_state.tool_mode} Assistant</h3>",
     unsafe_allow_html=True
 )
+# =====================================================
+# ANSWER MODE (Ultra-Fast / Thinking) — RESTORED
+# =====================================================
+mode_cols = st.columns([5, 2, 2, 5])
+
+with mode_cols[1]:
+    if st.button("Ultra-Fast", use_container_width=True):
+        st.session_state.answer_mode = "Ultra-Fast"
+
+with mode_cols[2]:
+    if st.button("Thinking", use_container_width=True):
+        st.session_state.answer_mode = "Thinking"
 
 # =====================================================
 # ANSWER MODE BUTTONS (CENTERED) + SMALLER
