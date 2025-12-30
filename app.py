@@ -26,81 +26,58 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 
 # =====================================================
-# 🔥 FORCE BACKGROUND IMAGE (NO CACHE / NO GUESSING)
-# Put your file in /assets and set its exact name here.
+# 🔥 REAL STREAMLIT BACKGROUND (TOP-ALIGNED, NO FADE)
 # =====================================================
-BG_IMAGE_PATH = os.path.join(ASSETS_DIR, "background.png")  # rename your image to background.png
+BG_IMAGE_PATH = os.path.join(ASSETS_DIR, "background.png")
 
 if os.path.isfile(BG_IMAGE_PATH):
+    import base64
     with open(BG_IMAGE_PATH, "rb") as f:
-        bg_b64 = base64.b64encode(f.read()).decode("utf-8")
+        bg_b64 = base64.b64encode(f.read()).decode()
 
     st.markdown(
         f"""
         <style>
-        /* ✅ TOP aligned background */
-        html, body, .stApp {{
-            background-image: url("data:image/png;base64,{bg_b64}") !important;
-            background-repeat: no-repeat !important;
-            background-position: top center !important;   /* ✅ START FROM ABOVE */
-            background-size: cover !important;
-            background-attachment: scroll !important;     /* makes it start at top naturally */
-            min-height: 100vh !important;
+        /* Kill Streamlit default backgrounds */
+        html, body {{
+            background: transparent !important;
         }}
 
-        /* Streamlit containers must be transparent so background shows */
         [data-testid="stAppViewContainer"] {{
             background: transparent !important;
         }}
 
-        [data-testid="stHeader"] {{
-            background: transparent !important;
+        /* REAL background layer */
+        .stApp::before {{
+            content: "";
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: -1;
+
+            background-image: url("data:image/png;base64,{bg_b64}");
+            background-repeat: no-repeat;
+            background-position: top center;   /* ✅ START FROM TOP */
+            background-size: cover;
         }}
 
-        /* Keep content readable (white glass card) */
+        /* Content card */
         section.main > div.block-container {{
-            max-width: 980px !important;
-            padding: 2rem !important;
-            background: rgba(255,255,255,0.92) !important;
-            border-radius: 22px !important;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.18) !important;
-        }}
-
-        .center {{ text-align:center; }}
-
-        .q-bubble {{
-            padding: 10px 14px;
-            border-radius: 14px;
-            max-width: 85%;
-            font-weight: 600;
-            margin: 10px 0 8px;
-        }}
-
-        .q-general {{ background:#f2f2f2; }}
-        .q-bayut {{ background:#e6f4ef; }}
-        .q-dubizzle {{ background:#fdeaea; }}
-
-        .answer {{
-            margin-left: 6px;
-            margin-bottom: 14px;
-            line-height: 1.6;
-        }}
-
-        div.stButton > button {{
-            border-radius: 10px;
-        }}
-
-        .small-btn div.stButton > button {{
-            padding-top: 0.35rem !important;
-            padding-bottom: 0.35rem !important;
-            font-size: 0.95rem !important;
+            max-width: 980px;
+            padding: 2rem;
+            background: rgba(255,255,255,0.95);
+            border-radius: 22px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.18);
         }}
         </style>
         """,
         unsafe_allow_html=True
     )
 else:
-    st.error("❌ assets/background.png NOT FOUND (rename your image to background.png inside /assets)")
+    st.error("❌ assets/background.png NOT FOUND")
+
 
 # =====================================================
 # ACCESS CODE GATE
