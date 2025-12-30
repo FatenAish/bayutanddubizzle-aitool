@@ -1,7 +1,9 @@
 import os
 import re
 import html
+import time
 import base64
+import hashlib
 import streamlit as st
 
 from langchain_community.vectorstores import FAISS
@@ -9,231 +11,625 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_core.documents import Document
 
 # =====================================================
-# PAGE CONFIG (MUST BE FIRST)
+# PAGE CONFIG (must be first Streamlit call)
 # =====================================================
-st.set_page_config(
-    page_title="Bayut & Dubizzle AI Content Assistant",
-    layout="wide"
-)
+st.set_page_config(page_title="Bayut & Dubizzle AI Content Assistant", layout="wide")
 
 # =====================================================
-# PATHS (STREAMLIT CLOUD SAFE)
+# PATHS
 # =====================================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 
-BG_IMAGE = "ChatGPT Image Dec 30, 2025, 03_14_09 PM.png"
-BG_IMAGE_PATH = os.path.join(ASSETS_DIR, BG_IMAGE)
+# =====================================================
+# BACKGROUND (FULL WEBSITE)
+# ✅ You uploaded background.png under /data, so we prioritize it
+# =====================================================
+def _find_background_image():
+    preferred_exact = [
+        # ✅ YOUR CURRENT PLACE (data)
+        os.path.join(DATA_DIR, "background.png"),
+        os.path.join(DATA_DIR, "background.jpg"),
+        os.path.join(DATA_DIR, "background.jpeg"),
+
+        # assets (optional)
+        os.path.join(ASSETS_DIR, "background.png"),
+        os.path.join(ASSETS_DIR, "background.jpg"),
+        os.path.join(ASSETS_DIR, "background.jpeg"),
+
+        # root (optional)
+        os.path.join(BASE_DIR, "background.png"),
+        os.path.join(BASE_DIR, "background.jpg"),
+        os.path.join(BASE_DIR, "background.jpeg"),
+    ]
+
+    for p in preferred_exact:
+        if p and os.path.isfile(p):
+            return p
+
+    # fallback: any image in assets
+    if os.path.isdir(ASSETS_DIR):
+        imgs = [x for x in os.listdir(ASSETS_DIR) if x.lower().endswith((".png", ".jpg", ".jpeg"))]
+        if imgs:
+            return os.path.join(ASSETS_DIR, sorted(imgs)[0])
+
+    # fallback: any image in root
+    imgs_root = [x for x in os.listdir(BASE_DIR) if x.lower().endswith((".png", ".jpg", ".jpeg"))]
+    if imgs_root:
+        return os.path.join(BASE_DIR, sorted(imgs_root)[0])
+
+    # fallback: any image in data
+    if os.path.isdir(DATA_DIR):
+        imgs_data = [x for x in os.listdir(DATA_DIR) if x.lower().endswith((".png", ".jpg", ".jpeg"))]
+        if imgs_data:
+            return os.path.join(DATA_DIR, sorted(imgs_data)[0])
+
+    return None
+
+@st.cache_data(show_spinner=False)
+def _img_to_data_uri(path: str, mtime: float):
+    with open(path, "rb") as f:
+        b64 = base64.b64encode(f.read()).decode("utf-8")
+    ext = os.path.splitext(path)[1].lower()
+    mime = "image/png" if ext == ".png" else "image/jpeg"
+    return f"data:{mime};base64,{b64}"
+
+_BG_PATH = _find_background_image()
+_BG_URI = _img_to_data_uri(_BG_PATH, os.path.getmtime(_BG_PATH)) if _BG_PATH else None
 
 # =====================================================
-# 🔥 FORCE BACKGROUND IMAGE (TOP-ALIGNED)
+# CSS (FULL PAGE BACKGROUND)
 # =====================================================
-if not os.path.isfile(BG_IMAGE_PATH):
-    st.error(f"❌ assets/{BG_IMAGE} NOT FOUND")
+if _BG_URI:
+    bg_value = f"url('{_BG_URI}')"
 else:
-    with open(BG_IMAGE_PATH, "rb") as f:
-        bg_b64 = base64.b64encode(f.read()).decode("utf-8")
+    bg_value = "linear-gradient(180deg,#0e5b76 0%, #0a3d4f 100%)"
 
-    st.markdown(
-        f"""
-        <style>
-        /* REMOVE ALL DEFAULT BACKGROUNDS */
-        html, body {{
-            margin: 0;
-            padding: 0;
-            height: 100%;
-            background: transparent !important;
-        }}
+st.markdown(
+    f"""
+    <style>
+      :root {{
+        --app-bg: {bg_value};
+      }}
 
-        .stApp {{
-            background: url("data:image/png;base64,{bg_b64}") no-repeat top center fixed !important;
-            background-size: cover !important;
-        }}
+      html, body {{
+        height: 100%;
+        min-height: 100%;
+        background: var(--app-bg) !important;
+        background-size: cover !important;
+        background-position: center !important;
+        background-repeat: no-repeat !important;
+        background-attachment: fixed !important;
+      }}
 
-        [data-testid="stAppViewContainer"] {{
-            background: transparent !important;
-        }}
+      .stApp {{
+        min-height: 100vh !important;
+        background: var(--app-bg) !important;
+        background-size: cover !important;
+        background-position: center !important;
+        background-repeat: no-repeat !important;
+        background-attachment: fixed !important;
+      }}
 
-        [data-testid="stHeader"] {{
-            background: transparent !important;
-        }}
+      [data-testid="stAppViewContainer"] {{
+        min-height: 100vh !important;
+        background: var(--app-bg) !important;
+        background-size: cover !important;
+        background-position: center !important;
+        background-repeat: no-repeat !important;
+        background-attachment: fixed !important;
+      }}
 
-        /* CONTENT CARD (TEXT SAFE ZONE) */
-        section.main > div.block-container {{
-            max-width: 980px !important;
-            margin-top: 2rem !important;
-            padding: 2.5rem !important;
-            background: rgba(255,255,255,0.95) !important;
-            border-radius: 22px !important;
-            box-shadow: 0 25px 70px rgba(0,0,0,0.25) !important;
-        }}
+      [data-testid="stAppViewContainer"] > .main {{
+        min-height: 100vh !important;
+        background: transparent !important;
+      }}
 
-        .center {{
-            text-align: center;
-        }}
+      [data-testid="stHeader"] {{
+        background: transparent !important;
+      }}
 
-        .q-bubble {{
-            padding: 10px 14px;
-            border-radius: 14px;
-            max-width: 85%;
-            font-weight: 600;
-            margin: 10px 0 8px;
-            background: #f2f2f2;
-        }}
+      section.main > div.block-container {{
+        max-width: 980px !important;
+        padding-top: 2rem !important;
+        padding-bottom: 2rem !important;
 
-        .answer {{
-            margin-left: 6px;
-            margin-bottom: 14px;
-            line-height: 1.6;
-        }}
+        background: rgba(255,255,255,0.92) !important;
+        border: 1px solid rgba(0,0,0,0.06) !important;
+        border-radius: 22px !important;
+        backdrop-filter: blur(10px) !important;
+        -webkit-backdrop-filter: blur(10px) !important;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.18) !important;
+      }}
 
-        button {{
-            border-radius: 10px !important;
-        }}
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
+      .center {{ text-align:center; }}
+
+      .q-bubble {{
+        padding: 10px 14px;
+        border-radius: 14px;
+        max-width: 85%;
+        width: fit-content;
+        font-weight: 600;
+        margin: 10px 0 8px;
+        border: 1px solid rgba(0,0,0,0.06);
+      }}
+      .q-general {{ background:#f2f2f2; }}
+      .q-bayut {{ background:#e6f4ef; }}
+      .q-dubizzle {{ background:#fdeaea; }}
+
+      .answer {{
+        margin-left: 6px;
+        margin-bottom: 14px;
+        line-height: 1.6;
+      }}
+
+      div.stButton > button {{ border-radius: 10px; }}
+
+      .small-btn div.stButton > button {{
+        padding-top: 0.35rem !important;
+        padding-bottom: 0.35rem !important;
+        font-size: 0.95rem !important;
+      }}
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+# =====================================================
+# ACCESS CODE GATE (FIRST SCREEN)
+# =====================================================
+ACCESS_CODE = os.getenv("ACCESS_CODE", "").strip()
+REQUIRE_CODE = os.getenv("REQUIRE_CODE", "0").strip() == "1"
+
+def _get_qp():
+    try:
+        return st.query_params
+    except Exception:
+        return st.experimental_get_query_params()
+
+def _set_qp(**kwargs):
+    try:
+        st.query_params.update(kwargs)
+    except Exception:
+        st.experimental_set_query_params(**kwargs)
+
+if REQUIRE_CODE and ACCESS_CODE:
+    st.session_state.setdefault("unlocked", False)
+
+    qp = _get_qp()
+    qp_code = None
+    try:
+        qp_code = qp.get("code")
+        if isinstance(qp_code, list):
+            qp_code = qp_code[0] if qp_code else None
+    except Exception:
+        qp_code = None
+
+    if qp_code and qp_code == ACCESS_CODE:
+        st.session_state["unlocked"] = True
+        try:
+            _set_qp()
+        except Exception:
+            pass
+
+    if not st.session_state["unlocked"]:
+        st.markdown(
+            """
+            <style>
+              section.main > div.block-container{
+                max-width: 520px !important;
+                padding-top: 6rem !important;
+              }
+              .gate-wrap{ text-align:center; }
+              .gate-title{ font-size: 34px; font-weight: 900; margin-bottom: 6px; }
+              .gate-sub{ color:#666; margin-bottom: 22px; }
+            </style>
+
+            <div class="gate-wrap">
+              <div class="gate-title">
+                <span style="color:#0E8A6D;">Bayut</span> &
+                <span style="color:#D71920;">Dubizzle</span> AI Assistant
+              </div>
+              <div class="gate-sub">Internal AI Assistant – Access Required</div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+        code = st.text_input(
+            "Access code",
+            type="password",
+            placeholder="Enter access code",
+            label_visibility="collapsed"
+        )
+
+        c1, c2, c3 = st.columns([1, 2, 1])
+        with c2:
+            unlock = st.button("Unlock", use_container_width=True)
+
+        if unlock:
+            if code == ACCESS_CODE:
+                st.session_state["unlocked"] = True
+                st.rerun()
+            else:
+                st.error("Wrong access code")
+
+        st.stop()
 
 # =====================================================
 # SESSION STATE
 # =====================================================
 st.session_state.setdefault("tool_mode", "General")
+st.session_state.setdefault("answer_mode", "Ultra-Fast")
 st.session_state.setdefault("chat", {"General": [], "Bayut": [], "Dubizzle": []})
 
 # =====================================================
 # HELPERS
 # =====================================================
-def is_sop_file(name):
-    return "sop" in name.lower()
+def is_sop_file(filename: str) -> bool:
+    return "sop" in filename.lower()
 
-def bucket_from_filename(name):
-    n = name.lower()
+def bucket_from_filename(filename: str) -> str:
+    n = filename.lower()
     if "both" in n:
         return "both"
-    if "bayut" in n or "mybayut" in n:
+    if "mybayut" in n or "bayut" in n:
         return "bayut"
     if "dubizzle" in n:
         return "dubizzle"
     return "general"
 
-def read_text(fp):
-    with open(fp, "rb") as f:
-        return f.read().decode("utf-8", errors="ignore")
+def looks_binary_file(fp: str) -> bool:
+    # Detect binary even when file has no extension (prevents UnicodeDecodeError forever)
+    try:
+        with open(fp, "rb") as f:
+            chunk = f.read(4096)
+        if not chunk:
+            return False
+        if b"\x00" in chunk:
+            return True
+        # many non-printable bytes -> binary
+        text_chars = bytearray({7, 8, 9, 10, 12, 13, 27} | set(range(0x20, 0x100)))
+        nontext = chunk.translate(None, text_chars)
+        return (len(nontext) / max(1, len(chunk))) > 0.30
+    except Exception:
+        return True
 
-def parse_qa_pairs(text):
+def is_text_candidate(filename: str, fp: str) -> bool:
+    n = filename.lower().strip()
+
+    # Skip obvious binary by extension
+    if n.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".pdf", ".zip", ".rar")):
+        return False
+
+    # If it has an extension, allow only .txt
+    ext = os.path.splitext(n)[1]
+    if ext and ext != ".txt":
+        return False
+
+    # If no extension OR .txt, still guard against binary
+    if looks_binary_file(fp):
+        return False
+
+    return True
+
+def read_text_safe(fp: str) -> str:
+    # Never raise UnicodeDecodeError
+    try:
+        with open(fp, "r", encoding="utf-8", errors="ignore") as f:
+            return f.read()
+    except Exception:
+        return ""
+
+def parse_qa_pairs(text: str):
+    pairs = []
     pattern = re.compile(
-        r"Q[:\-]\s*(.*?)\nA[:\-]\s*(.*?)(?=\nQ[:\-]|\Z)",
-        re.S | re.I
+        r"(?im)^\s*Q\s*[:\-–]\s*(.*?)\s*$\n^\s*A\s*[:\-–]\s*(.*?)(?=^\s*Q\s*[:\-–]\s*|\Z)",
+        re.DOTALL | re.MULTILINE
     )
-    return [(q.strip(), a.strip()) for q, a in pattern.findall(text)]
+    for m in pattern.finditer(text):
+        q = re.sub(r"\s+", " ", m.group(1)).strip()
+        a = m.group(2).strip()
+        a = re.sub(r"\n{3,}", "\n\n", a).strip()
+        if q and a:
+            pairs.append((q, a))
+    return pairs
+
+def normalize_download_query(q: str) -> str:
+    return re.sub(r"\s+", " ", q.lower().strip())
+
+def sop_candidates():
+    if not os.path.isdir(DATA_DIR):
+        return []
+    out = []
+    for f in os.listdir(DATA_DIR):
+        fp = os.path.join(DATA_DIR, f)
+        if os.path.isfile(fp) and is_sop_file(f):
+            out.append(f)
+    return sorted(out)
+
+def best_sop_match(user_query: str):
+    t = normalize_download_query(user_query)
+    if ("download" not in t) and ("sop" not in t) and ("file" not in t):
+        return []
+
+    all_sops = sop_candidates()
+    if not all_sops:
+        return []
+
+    tokens = [x for x in re.split(r"[^a-z0-9]+", t) if x]
+    topic_tokens = [x for x in tokens if x not in {"download", "sop", "file", "the", "a", "an"}]
+
+    if ("download" in tokens and "sop" in tokens) and (not topic_tokens):
+        return all_sops
+
+    mode = st.session_state.tool_mode
+
+    def pick_by_contains(substrs):
+        return [f for f in all_sops if all(s in f.lower() for s in substrs)]
+
+    if any(k in t for k in ["newsletter", "newsletters"]):
+        bay = pick_by_contains(["bayut", "newsletters"])
+        dub = pick_by_contains(["dubizzle", "newsletters"])
+        if mode == "Bayut":
+            return bay or []
+        if mode == "Dubizzle":
+            return dub or []
+        return (bay + dub) if (bay or dub) else []
+
+    if any(k in t for k in ["algolia", "location", "locations"]):
+        return pick_by_contains(["algolia", "locations"]) or []
+
+    if any(k in t for k in ["pm", "campaign", "campaigns", "performance", "marketing"]):
+        bay = pick_by_contains(["bayut", "campaign"])
+        dub = pick_by_contains(["dubizzle", "campaign"])
+        if mode == "Bayut":
+            return bay or []
+        if mode == "Dubizzle":
+            return dub or []
+        return (bay + dub) if (bay or dub) else []
+
+    if any(k in t for k in ["social", "instagram", "posting"]):
+        return pick_by_contains(["social", "posting"]) or []
+
+    if any(k in t for k in ["correction", "corrections", "update", "updates", "listing", "listings", "project", "projects"]):
+        return [f for f in all_sops if "corrections" in f.lower() or "updates" in f.lower()] or []
+
+    matches = []
+    for f in all_sops:
+        fn = f.lower()
+        if any(tok in fn for tok in topic_tokens):
+            matches.append(f)
+
+    return matches
+
+def format_thinking_answer(primary: str, extras: list[str]) -> str:
+    out = []
+    if primary:
+        out.append(primary.strip())
+    for ex in extras:
+        ex = ex.strip()
+        if not ex:
+            continue
+        if primary and ex.lower() == primary.lower():
+            continue
+        out.append(ex)
+    return "\n\n".join(out[:4]) if out else "No relevant answer found in internal Q&A."
 
 # =====================================================
 # EMBEDDINGS
 # =====================================================
 @st.cache_resource
 def get_embeddings():
-    return HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-MiniLM-L6-v2"
-    )
+    return HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
 # =====================================================
-# BUILD VECTOR STORES
+# BUILD STORES (Embed question only)
+# ✅ renamed to bust Streamlit cache + bulletproof file skipping
 # =====================================================
 @st.cache_resource
-def build_stores():
-    emb = get_embeddings()
-    all_docs, bayut_docs, dub_docs = [], [], []
+def build_stores_v2():
+    if not os.path.isdir(DATA_DIR):
+        raise RuntimeError("❌ /data folder not found")
 
-    for f in os.listdir(DATA_DIR):
-        fp = os.path.join(DATA_DIR, f)
-        if not os.path.isfile(fp) or is_sop_file(f):
+    emb = get_embeddings()
+    docs_all, docs_bayut, docs_dubizzle = [], [], []
+
+    for fname in os.listdir(DATA_DIR):
+        fp = os.path.join(DATA_DIR, fname)
+        if not os.path.isfile(fp) or fname.startswith("."):
             continue
 
-        for q, a in parse_qa_pairs(read_text(fp)):
-            doc = Document(page_content=q, metadata={"answer": a})
-            all_docs.append(doc)
+        # skip SOPs
+        if is_sop_file(fname):
+            continue
 
-            b = bucket_from_filename(f)
-            if b in ("bayut", "both"):
-                bayut_docs.append(doc)
-            if b in ("dubizzle", "both"):
-                dub_docs.append(doc)
+        # ✅ skip images/binary EVEN if no extension
+        if not is_text_candidate(fname, fp):
+            continue
 
-    return (
-        FAISS.from_documents(all_docs, emb),
-        FAISS.from_documents(bayut_docs, emb) if bayut_docs else None,
-        FAISS.from_documents(dub_docs, emb) if dub_docs else None
-    )
+        text = read_text_safe(fp)
+        if not text.strip():
+            continue
 
-VS_ALL, VS_BAYUT, VS_DUBIZZLE = build_stores()
+        pairs = parse_qa_pairs(text)
+        if not pairs:
+            continue
 
-def pick_store():
-    return {
-        "General": VS_ALL,
-        "Bayut": VS_BAYUT,
-        "Dubizzle": VS_DUBIZZLE
-    }[st.session_state.tool_mode]
+        bucket = bucket_from_filename(fname)
+
+        for q, a in pairs:
+            doc = Document(page_content=q, metadata={"answer": a, "source": fname, "bucket": bucket})
+            docs_all.append(doc)
+            if bucket in ("bayut", "both"):
+                docs_bayut.append(doc)
+            if bucket in ("dubizzle", "both"):
+                docs_dubizzle.append(doc)
+
+    if not docs_all:
+        raise RuntimeError("❌ No Q&A pairs found. Ensure your files contain 'Q:' and 'A:' blocks.")
+
+    vs_all = FAISS.from_documents(docs_all, emb)
+    vs_bayut = FAISS.from_documents(docs_bayut, emb) if docs_bayut else None
+    vs_dubizzle = FAISS.from_documents(docs_dubizzle, emb) if docs_dubizzle else None
+    return vs_all, vs_bayut, vs_dubizzle
+
+VS_ALL, VS_BAYUT, VS_DUBIZZLE = build_stores_v2()
+
+def pick_store(mode: str):
+    if mode == "Bayut":
+        return VS_BAYUT
+    if mode == "Dubizzle":
+        return VS_DUBIZZLE
+    return VS_ALL
 
 # =====================================================
 # HEADER
 # =====================================================
 st.markdown(
     """
-    <h1 class="center">
+    <h1 class="center" style="font-weight:900;margin-bottom:6px;">
       <span style="color:#0E8A6D;">Bayut</span> &
       <span style="color:#D71920;">Dubizzle</span> AI Content Assistant
     </h1>
-    <p class="center">Internal AI Assistant</p>
+    <div class="center" style="color:#666;margin-bottom:14px;">Internal AI Assistant</div>
     """,
     unsafe_allow_html=True
 )
 
 # =====================================================
-# TOOL MODE
+# TOOL MODE BUTTONS (CENTERED)
 # =====================================================
-c1, c2, c3 = st.columns(3)
-if c1.button("General", use_container_width=True):
-    st.session_state.tool_mode = "General"
-if c2.button("Bayut", use_container_width=True):
-    st.session_state.tool_mode = "Bayut"
-if c3.button("Dubizzle", use_container_width=True):
-    st.session_state.tool_mode = "Dubizzle"
+tool_cols = st.columns([2, 3, 3, 3, 2])
+with tool_cols[1]:
+    if st.button("General", use_container_width=True, key="btn_tool_general"):
+        st.session_state.tool_mode = "General"
+with tool_cols[2]:
+    if st.button("Bayut", use_container_width=True, key="btn_tool_bayut"):
+        st.session_state.tool_mode = "Bayut"
+with tool_cols[3]:
+    if st.button("Dubizzle", use_container_width=True, key="btn_tool_dubizzle"):
+        st.session_state.tool_mode = "Dubizzle"
 
 st.markdown(
-    f"<h3 class='center'>{st.session_state.tool_mode} Assistant</h3>",
+    f"<h3 class='center' style='margin-top:18px;margin-bottom:6px;'>{st.session_state.tool_mode} Assistant</h3>",
     unsafe_allow_html=True
 )
 
 # =====================================================
-# INPUT
+# ANSWER MODE BUTTONS (CENTERED) + smaller
 # =====================================================
-q = st.text_input("Type your question here…")
-if st.button("Ask") and q:
-    vs = pick_store()
-    results = vs.similarity_search(q, k=4)
+mode_cols = st.columns([5, 2, 2, 5])
+with mode_cols[1]:
+    st.markdown("<div class='small-btn'>", unsafe_allow_html=True)
+    if st.button("Ultra-Fast", use_container_width=True, key="btn_mode_fast"):
+        st.session_state.answer_mode = "Ultra-Fast"
+    st.markdown("</div>", unsafe_allow_html=True)
 
-    answer = next(
-        (r.metadata["answer"] for r in results if r.metadata.get("answer")),
-        "No relevant answer found."
-    )
+with mode_cols[2]:
+    st.markdown("<div class='small-btn'>", unsafe_allow_html=True)
+    if st.button("Thinking", use_container_width=True, key="btn_mode_thinking"):
+        st.session_state.answer_mode = "Thinking"
+    st.markdown("</div>", unsafe_allow_html=True)
 
-    st.session_state.chat[st.session_state.tool_mode].append({
-        "q": q,
-        "a": answer
-    })
+st.markdown("<div style='height:16px;'></div>", unsafe_allow_html=True)
 
 # =====================================================
-# CHAT
+# INPUT + ASK/CLEAR
 # =====================================================
-for item in reversed(st.session_state.chat[st.session_state.tool_mode]):
+outer = st.columns([1, 6, 1])
+with outer[1]:
+    with st.form("ask_form", clear_on_submit=True):
+        q = st.text_input("", placeholder="Type your question here…", label_visibility="collapsed")
+        bcols = st.columns([1, 1])
+        ask = bcols[0].form_submit_button("Ask", use_container_width=True)
+        clear = bcols[1].form_submit_button("Clear chat", use_container_width=True)
+
+if clear:
+    st.session_state.chat[st.session_state.tool_mode] = []
+    st.rerun()
+
+# =====================================================
+# ANSWER
+# =====================================================
+if ask and q:
+    sop_files = best_sop_match(q)
+    if sop_files:
+        st.session_state.chat[st.session_state.tool_mode].append({"type": "download", "q": q, "files": sop_files})
+        st.rerun()
+
+    thinking = (st.session_state.answer_mode == "Thinking")
+    vs = pick_store(st.session_state.tool_mode)
+
+    if st.session_state.tool_mode == "Bayut" and vs is None:
+        st.session_state.chat["Bayut"].append({"type": "qa", "q": q, "a": "No Bayut/MyBayut Q&A files detected."})
+        st.rerun()
+    if st.session_state.tool_mode == "Dubizzle" and vs is None:
+        st.session_state.chat["Dubizzle"].append({"type": "qa", "q": q, "a": "No dubizzle Q&A files detected."})
+        st.rerun()
+
+    if thinking:
+        with st.spinner("Thinking…"):
+            time.sleep(0.35)
+
+    k = 8 if thinking else 4
+    results = vs.similarity_search(q, k=k)
+
+    answers = []
+    for r in results:
+        a = (r.metadata.get("answer") or "").strip()
+        if not a:
+            continue
+        if a.lower() in [x.lower() for x in answers]:
+            continue
+        answers.append(a)
+
+    if not answers:
+        final = "No relevant answer found in internal Q&A."
+    else:
+        final = answers[0] if not thinking else format_thinking_answer(answers[0], answers[1:])
+
+    st.session_state.chat[st.session_state.tool_mode].append({"type": "qa", "q": q, "a": final})
+    st.rerun()
+
+# =====================================================
+# CHAT HISTORY (ONLY CURRENT MODE)
+# =====================================================
+bubble_class = {
+    "General": "q-general",
+    "Bayut": "q-bayut",
+    "Dubizzle": "q-dubizzle",
+}[st.session_state.tool_mode]
+
+history = st.session_state.chat.get(st.session_state.tool_mode, [])
+
+for idx, item in enumerate(reversed(history)):
     st.markdown(
-        f"<div class='q-bubble'>{html.escape(item['q'])}</div>",
+        f"<div class='q-bubble {bubble_class}'>{html.escape(item.get('q',''))}</div>",
         unsafe_allow_html=True
     )
-    st.markdown(
-        f"<div class='answer'>{item['a']}</div>",
-        unsafe_allow_html=True
-    )
+
+    if item.get("type") == "download":
+        files = item.get("files", [])
+        if not files:
+            st.markdown("<div class='answer'>No matching SOP found for your request.</div>", unsafe_allow_html=True)
+        else:
+            st.markdown("<div class='answer'><b>Download SOP file(s):</b></div>", unsafe_allow_html=True)
+            for f in files:
+                fp = os.path.join(DATA_DIR, f)
+                if not os.path.isfile(fp):
+                    continue
+                with open(fp, "rb") as bf:
+                    st.download_button(
+                        label=f"Download: {f}",
+                        data=bf,
+                        file_name=f,
+                        mime="text/plain",
+                        key=f"dl_{hashlib.md5((f+str(idx)).encode()).hexdigest()}",
+                        use_container_width=False
+                    )
+    else:
+        st.markdown(f"<div class='answer'>{item.get('a','')}</div>", unsafe_allow_html=True)
+
     st.markdown("---")
