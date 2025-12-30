@@ -24,28 +24,42 @@ ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 
 # =====================================================
 # BACKGROUND (FULL WEBSITE)
-# Put your image in /assets/background.png (recommended)
-# Auto-detects if not found.
+# ✅ Prioritize /data/background.png first (since you uploaded it under data)
 # =====================================================
 def _find_background_image():
-    preferred = [
+    preferred_exact = [
+        # ✅ YOUR CURRENT PLACE (data)
+        os.path.join(DATA_DIR, "background.png"),
+        os.path.join(DATA_DIR, "background.jpg"),
+        os.path.join(DATA_DIR, "background.jpeg"),
+
+        # assets (optional)
         os.path.join(ASSETS_DIR, "background.png"),
         os.path.join(ASSETS_DIR, "background.jpg"),
         os.path.join(ASSETS_DIR, "background.jpeg"),
+
+        # root (optional)
+        os.path.join(BASE_DIR, "background.png"),
+        os.path.join(BASE_DIR, "background.jpg"),
+        os.path.join(BASE_DIR, "background.jpeg"),
     ]
-    for p in preferred:
-        if os.path.isfile(p):
+
+    for p in preferred_exact:
+        if p and os.path.isfile(p):
             return p
 
+    # fallback: any image in assets
     if os.path.isdir(ASSETS_DIR):
         imgs = [x for x in os.listdir(ASSETS_DIR) if x.lower().endswith((".png", ".jpg", ".jpeg"))]
         if imgs:
             return os.path.join(ASSETS_DIR, sorted(imgs)[0])
 
+    # fallback: any image in root
     imgs_root = [x for x in os.listdir(BASE_DIR) if x.lower().endswith((".png", ".jpg", ".jpeg"))]
     if imgs_root:
         return os.path.join(BASE_DIR, sorted(imgs_root)[0])
 
+    # fallback: any image in data
     if os.path.isdir(DATA_DIR):
         imgs_data = [x for x in os.listdir(DATA_DIR) if x.lower().endswith((".png", ".jpg", ".jpeg"))]
         if imgs_data:
@@ -54,7 +68,8 @@ def _find_background_image():
     return None
 
 @st.cache_data(show_spinner=False)
-def _img_to_data_uri(path: str):
+def _img_to_data_uri(path: str, mtime: float):
+    # mtime is only used to bust cache when image changes
     with open(path, "rb") as f:
         b64 = base64.b64encode(f.read()).decode("utf-8")
     ext = os.path.splitext(path)[1].lower()
@@ -62,14 +77,13 @@ def _img_to_data_uri(path: str):
     return f"data:{mime};base64,{b64}"
 
 _BG_PATH = _find_background_image()
-_BG_URI = _img_to_data_uri(_BG_PATH) if _BG_PATH else None
+_BG_URI = _img_to_data_uri(_BG_PATH, os.path.getmtime(_BG_PATH)) if _BG_PATH else None
 
 # =====================================================
-# CSS (THIS IS THE FIX)
-# Background applied to: html/body + .stApp + stAppViewContainer + main
+# CSS (FULL PAGE BACKGROUND)
 # =====================================================
 if _BG_URI:
-    bg_value = f"linear-gradient(rgba(0,0,0,0.35), rgba(0,0,0,0.35)), url('{_BG_URI}')"
+    bg_value = f"url('{_BG_URI}')"
 else:
     bg_value = "linear-gradient(180deg,#0e5b76 0%, #0a3d4f 100%)"
 
@@ -509,7 +523,7 @@ if ask and q:
     vs = pick_store(st.session_state.tool_mode)
 
     if st.session_state.tool_mode == "Bayut" and vs is None:
-        st.session_state.chat["Bayut"].append({"type": "qa", "q": q, "a": "No Bayut/MyBayut Q&A files detected."})
+        st.session_state.chat["Bayut"].append({"type": "qa", "q": q, "a": "No Bayut corresponds Q&A files detected."})
         st.rerun()
     if st.session_state.tool_mode == "Dubizzle" and vs is None:
         st.session_state.chat["Dubizzle"].append({"type": "qa", "q": q, "a": "No dubizzle Q&A files detected."})
