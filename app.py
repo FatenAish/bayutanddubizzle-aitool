@@ -21,7 +21,8 @@ st.set_page_config(page_title="Bayut & Dubizzle AI Content Assistant", layout="w
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
-
+if not os.path.isdir(ASSETS_DIR):
+    ASSETS_DIR = os.path.join(os.getcwd(), "assets")
 # =====================================================
 # BACKGROUND (FULL WEBSITE)
 # ✅ Use ONLY assets/background.* (you already uploaded it there)
