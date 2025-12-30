@@ -24,7 +24,7 @@ ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 
 # =====================================================
 # BACKGROUND (FULL WEBSITE)
-# ✅ Prioritize /data/background.png first (since you uploaded it under data)
+# ✅ You uploaded background.png under /data, so we prioritize it
 # =====================================================
 def _find_background_image():
     preferred_exact = [
@@ -63,6 +63,8 @@ def _find_background_image():
     if os.path.isdir(DATA_DIR):
         imgs_data = [x for x in os.listdir(DATA_DIR) if x.lower().endswith((".png", ".jpg", ".jpeg"))]
         if imgs_data:
+            # IMPORTANT: if you have other images in /data, this might pick the wrong one.
+            # That's why we always recommend naming it exactly background.png above.
             return os.path.join(DATA_DIR, sorted(imgs_data)[0])
 
     return None
@@ -272,12 +274,31 @@ st.session_state.setdefault("chat", {"General": [], "Bayut": [], "Dubizzle": []}
 # HELPERS
 # =====================================================
 def read_text(fp: str) -> str:
+    # Try common encodings, then fallback without crashing
+    for enc in ("utf-8", "utf-8-sig", "cp1252", "latin-1"):
+        try:
+            with open(fp, "r", encoding=enc) as f:
+                return f.read()
+        except UnicodeDecodeError:
+            continue
+        except Exception:
+            break
+
+    # last resort: ignore bad bytes
     try:
-        with open(fp, "r", encoding="utf-8") as f:
+        with open(fp, "r", encoding="utf-8", errors="ignore") as f:
             return f.read()
-    except UnicodeDecodeError:
-        with open(fp, "r", encoding="utf-8-sig") as f:
-            return f.read()
+    except Exception:
+        return ""
+
+def is_text_candidate(filename: str) -> bool:
+    n = filename.lower().strip()
+    # skip obvious binary files
+    if n.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".pdf", ".zip", ".rar")):
+        return False
+    # allow .txt and also files with no extension (like "General-QA")
+    ext = os.path.splitext(n)[1]
+    return (ext == ".txt") or (ext == "")
 
 def is_sop_file(filename: str) -> bool:
     return "sop" in filename.lower()
@@ -409,10 +430,17 @@ def build_stores():
         fp = os.path.join(DATA_DIR, fname)
         if not os.path.isfile(fp) or fname.startswith("."):
             continue
+
+        # ✅ skip SOPs + skip images/binary
         if is_sop_file(fname):
+            continue
+        if not is_text_candidate(fname):
             continue
 
         text = read_text(fp)
+        if not text.strip():
+            continue
+
         pairs = parse_qa_pairs(text)
         if not pairs:
             continue
@@ -523,7 +551,7 @@ if ask and q:
     vs = pick_store(st.session_state.tool_mode)
 
     if st.session_state.tool_mode == "Bayut" and vs is None:
-        st.session_state.chat["Bayut"].append({"type": "qa", "q": q, "a": "No Bayut corresponds Q&A files detected."})
+        st.session_state.chat["Bayut"].append({"type": "qa", "q": q, "a": "No Bayut/MyBayut Q&A files detected."})
         st.rerun()
     if st.session_state.tool_mode == "Dubizzle" and vs is None:
         st.session_state.chat["Dubizzle"].append({"type": "qa", "q": q, "a": "No dubizzle Q&A files detected."})
