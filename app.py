@@ -27,23 +27,32 @@ ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 # FIND HERO IMAGE (AUTO)
 # =====================================================
 def find_hero_image():
+    # Prefer assets, then data, then root
     for folder in [ASSETS_DIR, DATA_DIR, BASE_DIR]:
         if os.path.isdir(folder):
-            for f in os.listdir(folder):
-                if f.lower().endswith((".png", ".jpg", ".jpeg")):
-                    return os.path.join(folder, f)
+            imgs = [f for f in os.listdir(folder) if f.lower().endswith((".png", ".jpg", ".jpeg"))]
+            if imgs:
+                # pick the newest file so when you re-upload it changes
+                imgs_full = [os.path.join(folder, f) for f in imgs]
+                imgs_full.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+                return imgs_full[0]
     return None
 
 HERO_PATH = find_hero_image()
 HERO_B64 = ""
 
-if HERO_PATH:
+if HERO_PATH and os.path.isfile(HERO_PATH):
     with open(HERO_PATH, "rb") as f:
         HERO_B64 = base64.b64encode(f.read()).decode("utf-8")
 
 # =====================================================
-# GLOBAL CSS (HERO STYLE – CLEAN)
+# GLOBAL CSS (BIGGER HERO)
 # =====================================================
+# Key changes:
+# - hero width: 98vw (almost full screen)
+# - hero height: 520px (bigger)
+# - background-size: cover (fills the hero area)
+# - content padding-top increased so UI starts after hero
 st.markdown(
     f"""
     <style>
@@ -59,41 +68,45 @@ st.markdown(
         background: #ffffff !important;
     }}
 
-    /* HERO IMAGE */
+    /* BIG HERO IMAGE */
     .hero {{
-        position: absolute;
-        top: 80px;
+        position: fixed;
+        top: 0px;
         left: 50%;
         transform: translateX(-50%);
-        width: 1100px;
-        max-width: 95vw;
-        height: 360px;
+        width: 98vw;
+        max-width: 1600px;
+        height: 520px;
         background-image: url("data:image/png;base64,{HERO_B64}");
         background-repeat: no-repeat;
-        background-size: contain;
-        background-position: center top;
-        opacity: 0.22;
+        background-size: cover;
+        background-position: center center;
+        opacity: 0.32;
         z-index: 0;
         pointer-events: none;
     }}
 
-    /* MAIN CONTENT */
+    /* MAIN CONTENT WRAPPER */
     section.main > div.block-container {{
         position: relative;
         z-index: 2;
         max-width: 980px !important;
-        padding-top: 4rem !important;
+        padding-top: 6.2rem !important;
         padding-bottom: 3rem !important;
         background: transparent !important;
     }}
 
+    /* push UI down so it starts BELOW the hero */
+    .push-down {{
+        height: 280px;
+    }}
+
     /* CARD */
     .ui-card {{
-        background: #ffffff;
+        background: rgba(255,255,255,0.96);
         padding: 2rem;
         border-radius: 20px;
         box-shadow: 0 16px 40px rgba(0,0,0,0.08);
-        margin-top: 2rem;
     }}
 
     .center {{
@@ -162,9 +175,7 @@ def parse_qa_pairs(text):
 # =====================================================
 @st.cache_resource
 def get_embeddings():
-    return HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-MiniLM-L6-v2"
-    )
+    return HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
 # =====================================================
 # BUILD VECTOR STORES
@@ -180,30 +191,28 @@ def build_stores():
     for f in os.listdir(DATA_DIR):
         if not f.lower().endswith(".txt") or is_sop_file(f):
             continue
-
         fp = os.path.join(DATA_DIR, f)
         for q, a in parse_qa_pairs(read_text(fp)):
             doc = Document(page_content=q, metadata={"answer": a})
             stores["General"].append(doc)
             stores[bucket_from_filename(f)].append(doc)
 
-    return {
-        k: FAISS.from_documents(v, emb) if v else None
-        for k, v in stores.items()
-    }
+    return {k: (FAISS.from_documents(v, emb) if v else None) for k, v in stores.items()}
 
 VECTOR_STORES = build_stores()
 
 # =====================================================
 # HEADER
 # =====================================================
+st.markdown("<div class='push-down'></div>", unsafe_allow_html=True)
+
 st.markdown(
     """
-    <h1 class="center">
+    <h1 class="center" style="margin-bottom:6px;">
       <span style="color:#0E8A6D;">Bayut</span> &
       <span style="color:#D71920;">Dubizzle</span> AI Content Assistant
     </h1>
-    <p class="center">Internal AI Assistant</p>
+    <p class="center" style="margin-top:0;">Internal AI Assistant</p>
     """,
     unsafe_allow_html=True
 )
@@ -220,7 +229,7 @@ if c3.button("Dubizzle", use_container_width=True):
     st.session_state.tool_mode = "Dubizzle"
 
 st.markdown(
-    f"<h3 class='center'>{st.session_state.tool_mode} Assistant</h3>",
+    f"<h3 class='center' style='margin-top:18px;'>{st.session_state.tool_mode} Assistant</h3>",
     unsafe_allow_html=True
 )
 
@@ -242,10 +251,7 @@ if st.button("Ask") and q:
     else:
         answer = "No data available."
 
-    st.session_state.chat[st.session_state.tool_mode].append({
-        "q": q,
-        "a": answer
-    })
+    st.session_state.chat[st.session_state.tool_mode].append({"q": q, "a": answer})
 
 for item in reversed(st.session_state.chat[st.session_state.tool_mode]):
     st.markdown(f"<div class='q-bubble'>{html.escape(item['q'])}</div>", unsafe_allow_html=True)
