@@ -81,11 +81,6 @@ _BG_URI = _img_to_data_uri(_BG_PATH, os.path.getmtime(_BG_PATH)) if _BG_PATH els
 # =====================================================
 # CSS (FULL PAGE BACKGROUND)
 # =====================================================
-if _BG_URI:
-    bg_value = f"url('{_BG_URI}')"
-else:
-    bg_value = "linear-gradient(180deg,#0e5b76 0%, #0a3d4f 100%)"
-
 st.markdown(
     f"""
     <style>
@@ -97,28 +92,31 @@ st.markdown(
         height: 100%;
         min-height: 100%;
         background: var(--app-bg) !important;
-        background-size: cover !important;
-        background-position: center !important;
+        background-size: contain !important;          /* ✅ no cropping */
+        background-position: center center !important;/* ✅ middle */
         background-repeat: no-repeat !important;
         background-attachment: fixed !important;
+        background-color: #ffffff !important;         /* ✅ clean white around image */
       }}
 
       .stApp {{
         min-height: 100vh !important;
         background: var(--app-bg) !important;
-        background-size: cover !important;
-        background-position: center !important;
+        background-size: contain !important;          /* ✅ no cropping */
+        background-position: center center !important;/* ✅ middle */
         background-repeat: no-repeat !important;
         background-attachment: fixed !important;
+        background-color: #ffffff !important;
       }}
 
       [data-testid="stAppViewContainer"] {{
         min-height: 100vh !important;
         background: var(--app-bg) !important;
-        background-size: cover !important;
-        background-position: center !important;
+        background-size: contain !important;          /* ✅ no cropping */
+        background-position: center center !important;/* ✅ middle */
         background-repeat: no-repeat !important;
         background-attachment: fixed !important;
+        background-color: #ffffff !important;
       }}
 
       [data-testid="stAppViewContainer"] > .main {{
@@ -134,6 +132,9 @@ st.markdown(
         max-width: 980px !important;
         padding-top: 2rem !important;
         padding-bottom: 2rem !important;
+
+        /* ✅ push content down a bit so the bg “sits behind” nicely */
+        margin-top: 6vh !important;
 
         background: rgba(255,255,255,0.92) !important;
         border: 1px solid rgba(0,0,0,0.06) !important;
@@ -174,6 +175,8 @@ st.markdown(
     </style>
     """,
     unsafe_allow_html=True
+)
+
 )
 # =====================================================
 # ACCESS CODE GATE (FIRST SCREEN)
