@@ -26,28 +26,24 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 
 # =====================================================
-# 🔥 BACKGROUND IMAGE (LOCKED + SAFE)
+# 🔥 BACKGROUND IMAGE (STATIC FILE – NO CACHE ISSUES)
 # =====================================================
-BG_IMAGE_PATH = os.path.join(ASSETS_DIR, "background.png")
-
-if not os.path.isfile(BG_IMAGE_PATH):
-    st.error("❌ assets/background.png NOT FOUND")
-    st.stop()
-
-with open(BG_IMAGE_PATH, "rb") as f:
-    bg_b64 = base64.b64encode(f.read()).decode("utf-8")
+BG_URL = "/assets/background.png"
 
 st.markdown(
     f"""
     <style>
-    /* ===== FULL PAGE BACKGROUND ===== */
+    /* FULL PAGE BACKGROUND */
     html, body {{
-        background: url("data:image/png;base64,{bg_b64}") no-repeat center top fixed !important;
+        background-image: url("{BG_URL}") !important;
+        background-repeat: no-repeat !important;
+        background-position: center top !important;
         background-size: cover !important;
+        background-attachment: fixed !important;
         height: 100%;
     }}
 
-    /* Streamlit root MUST be transparent */
+    /* Streamlit containers must be transparent */
     .stApp {{
         background: transparent !important;
     }}
@@ -60,47 +56,15 @@ st.markdown(
         background: transparent !important;
     }}
 
-    /* ===== CONTENT CARD (PROTECT UI) ===== */
+    /* CONTENT CARD */
     section.main > div.block-container {{
         max-width: 1000px !important;
-        margin-top: 160px !important;   /* ⬅ pushes content BELOW image */
+        margin-top: 160px !important;
         padding: 2.5rem !important;
 
         background: #ffffff !important;
         border-radius: 28px !important;
         box-shadow: 0 35px 90px rgba(0,0,0,0.30) !important;
-    }}
-
-    /* ===== TEXT SAFETY ===== */
-    h1, h2, h3, p, label {{
-        color: #111 !important;
-    }}
-
-    input, textarea {{
-        background: #f6f7f8 !important;
-    }}
-
-    .center {{
-        text-align: center;
-    }}
-
-    .q-bubble {{
-        padding: 10px 14px;
-        border-radius: 14px;
-        max-width: 85%;
-        font-weight: 600;
-        margin: 10px 0 8px;
-        background: #f2f2f2;
-    }}
-
-    .answer {{
-        margin-left: 6px;
-        margin-bottom: 14px;
-        line-height: 1.6;
-    }}
-
-    div.stButton > button {{
-        border-radius: 10px;
     }}
     </style>
     """,
