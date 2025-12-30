@@ -24,38 +24,17 @@ ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 
 # =====================================================
 # BACKGROUND (FULL WEBSITE)
-# Prioritize /data/background.* then /assets/background.* then root
+# ✅ Use ONLY assets/background.* (you already uploaded it there)
 # =====================================================
 def _find_background_image():
-    preferred_exact = [
-        os.path.join(DATA_DIR, "background.png"),
-        os.path.join(DATA_DIR, "background.jpg"),
-        os.path.join(DATA_DIR, "background.jpeg"),
+    preferred = [
         os.path.join(ASSETS_DIR, "background.png"),
         os.path.join(ASSETS_DIR, "background.jpg"),
         os.path.join(ASSETS_DIR, "background.jpeg"),
-        os.path.join(BASE_DIR, "background.png"),
-        os.path.join(BASE_DIR, "background.jpg"),
-        os.path.join(BASE_DIR, "background.jpeg"),
     ]
-    for p in preferred_exact:
-        if p and os.path.isfile(p):
+    for p in preferred:
+        if os.path.isfile(p):
             return p
-
-    if os.path.isdir(ASSETS_DIR):
-        imgs = [x for x in os.listdir(ASSETS_DIR) if x.lower().endswith((".png", ".jpg", ".jpeg"))]
-        if imgs:
-            return os.path.join(ASSETS_DIR, sorted(imgs)[0])
-
-    if os.path.isdir(DATA_DIR):
-        imgs = [x for x in os.listdir(DATA_DIR) if x.lower().endswith((".png", ".jpg", ".jpeg"))]
-        if imgs:
-            return os.path.join(DATA_DIR, sorted(imgs)[0])
-
-    imgs_root = [x for x in os.listdir(BASE_DIR) if x.lower().endswith((".png", ".jpg", ".jpeg"))]
-    if imgs_root:
-        return os.path.join(BASE_DIR, sorted(imgs_root)[0])
-
     return None
 
 @st.cache_data(show_spinner=False)
@@ -280,7 +259,6 @@ def looks_binary_file(fp: str) -> bool:
             return False
         if b"\x00" in chunk:
             return True
-        # many non-printable bytes => binary
         text_chars = bytearray({7, 8, 9, 10, 12, 13, 27} | set(range(0x20, 0x100)))
         nontext = chunk.translate(None, text_chars)
         return (len(nontext) / max(1, len(chunk))) > 0.30
@@ -289,44 +267,26 @@ def looks_binary_file(fp: str) -> bool:
 
 def is_text_candidate(filename: str, fp: str) -> bool:
     n = filename.lower().strip()
-
-    # obvious binary extensions
     if n.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".pdf", ".zip", ".rar")):
         return False
-
-    # allow only .txt OR no extension; skip everything else (xlsx, docx, etc.)
     ext = os.path.splitext(n)[1]
     if ext and ext != ".txt":
         return False
-
-    # guard against binary content
     if looks_binary_file(fp):
         return False
-
     return True
 
 def read_text(fp: str) -> str:
-    """
-    NEVER raises UnicodeDecodeError:
-    - tries BOM-aware decoding
-    - then utf-8 ignore
-    """
+    """Never raises UnicodeDecodeError."""
     try:
         with open(fp, "rb") as f:
             raw = f.read()
         if not raw:
             return ""
-
-        # BOM detection
         if raw.startswith(b"\xff\xfe") or raw.startswith(b"\xfe\xff"):
-            try:
-                return raw.decode("utf-16", errors="ignore")
-            except Exception:
-                return raw.decode("utf-8", errors="ignore")
-
+            return raw.decode("utf-16", errors="ignore")
         if raw.startswith(b"\xef\xbb\xbf"):
             return raw.decode("utf-8-sig", errors="ignore")
-
         return raw.decode("utf-8", errors="ignore")
     except Exception:
         return ""
@@ -435,7 +395,6 @@ def get_embeddings():
 
 # =====================================================
 # BUILD STORES (Embed question only)
-# IMPORTANT: keep name build_stores() so your deployment trace matches.
 # =====================================================
 @st.cache_resource
 def build_stores():
@@ -450,11 +409,9 @@ def build_stores():
         if not os.path.isfile(fp) or fname.startswith("."):
             continue
 
-        # skip SOPs
         if is_sop_file(fname):
             continue
 
-        # skip non-text + binary
         if not is_text_candidate(fname, fp):
             continue
 
