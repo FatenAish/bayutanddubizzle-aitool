@@ -24,46 +24,37 @@ ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 
 # =====================================================
 # BACKGROUND (FULL WEBSITE)
-# ✅ You uploaded background.png under /data, so we prioritize it
+# Prioritize /data/background.* then /assets/background.* then root
 # =====================================================
 def _find_background_image():
     preferred_exact = [
-        # ✅ YOUR CURRENT PLACE (data)
         os.path.join(DATA_DIR, "background.png"),
         os.path.join(DATA_DIR, "background.jpg"),
         os.path.join(DATA_DIR, "background.jpeg"),
-
-        # assets (optional)
         os.path.join(ASSETS_DIR, "background.png"),
         os.path.join(ASSETS_DIR, "background.jpg"),
         os.path.join(ASSETS_DIR, "background.jpeg"),
-
-        # root (optional)
         os.path.join(BASE_DIR, "background.png"),
         os.path.join(BASE_DIR, "background.jpg"),
         os.path.join(BASE_DIR, "background.jpeg"),
     ]
-
     for p in preferred_exact:
         if p and os.path.isfile(p):
             return p
 
-    # fallback: any image in assets
     if os.path.isdir(ASSETS_DIR):
         imgs = [x for x in os.listdir(ASSETS_DIR) if x.lower().endswith((".png", ".jpg", ".jpeg"))]
         if imgs:
             return os.path.join(ASSETS_DIR, sorted(imgs)[0])
 
-    # fallback: any image in root
+    if os.path.isdir(DATA_DIR):
+        imgs = [x for x in os.listdir(DATA_DIR) if x.lower().endswith((".png", ".jpg", ".jpeg"))]
+        if imgs:
+            return os.path.join(DATA_DIR, sorted(imgs)[0])
+
     imgs_root = [x for x in os.listdir(BASE_DIR) if x.lower().endswith((".png", ".jpg", ".jpeg"))]
     if imgs_root:
         return os.path.join(BASE_DIR, sorted(imgs_root)[0])
-
-    # fallback: any image in data
-    if os.path.isdir(DATA_DIR):
-        imgs_data = [x for x in os.listdir(DATA_DIR) if x.lower().endswith((".png", ".jpg", ".jpeg"))]
-        if imgs_data:
-            return os.path.join(DATA_DIR, sorted(imgs_data)[0])
 
     return None
 
@@ -265,7 +256,7 @@ st.session_state.setdefault("answer_mode", "Ultra-Fast")
 st.session_state.setdefault("chat", {"General": [], "Bayut": [], "Dubizzle": []})
 
 # =====================================================
-# HELPERS
+# HELPERS (BULLETPROOF AGAINST UnicodeDecodeError)
 # =====================================================
 def is_sop_file(filename: str) -> bool:
     return "sop" in filename.lower()
@@ -281,7 +272,7 @@ def bucket_from_filename(filename: str) -> str:
     return "general"
 
 def looks_binary_file(fp: str) -> bool:
-    # Detect binary even when file has no extension (prevents UnicodeDecodeError forever)
+    """Detect binary even if file has .txt or no extension."""
     try:
         with open(fp, "rb") as f:
             chunk = f.read(4096)
@@ -289,7 +280,7 @@ def looks_binary_file(fp: str) -> bool:
             return False
         if b"\x00" in chunk:
             return True
-        # many non-printable bytes -> binary
+        # many non-printable bytes => binary
         text_chars = bytearray({7, 8, 9, 10, 12, 13, 27} | set(range(0x20, 0x100)))
         nontext = chunk.translate(None, text_chars)
         return (len(nontext) / max(1, len(chunk))) > 0.30
@@ -299,26 +290,44 @@ def looks_binary_file(fp: str) -> bool:
 def is_text_candidate(filename: str, fp: str) -> bool:
     n = filename.lower().strip()
 
-    # Skip obvious binary by extension
+    # obvious binary extensions
     if n.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".pdf", ".zip", ".rar")):
         return False
 
-    # If it has an extension, allow only .txt
+    # allow only .txt OR no extension; skip everything else (xlsx, docx, etc.)
     ext = os.path.splitext(n)[1]
     if ext and ext != ".txt":
         return False
 
-    # If no extension OR .txt, still guard against binary
+    # guard against binary content
     if looks_binary_file(fp):
         return False
 
     return True
 
-def read_text_safe(fp: str) -> str:
-    # Never raise UnicodeDecodeError
+def read_text(fp: str) -> str:
+    """
+    NEVER raises UnicodeDecodeError:
+    - tries BOM-aware decoding
+    - then utf-8 ignore
+    """
     try:
-        with open(fp, "r", encoding="utf-8", errors="ignore") as f:
-            return f.read()
+        with open(fp, "rb") as f:
+            raw = f.read()
+        if not raw:
+            return ""
+
+        # BOM detection
+        if raw.startswith(b"\xff\xfe") or raw.startswith(b"\xfe\xff"):
+            try:
+                return raw.decode("utf-16", errors="ignore")
+            except Exception:
+                return raw.decode("utf-8", errors="ignore")
+
+        if raw.startswith(b"\xef\xbb\xbf"):
+            return raw.decode("utf-8-sig", errors="ignore")
+
+        return raw.decode("utf-8", errors="ignore")
     except Exception:
         return ""
 
@@ -426,10 +435,10 @@ def get_embeddings():
 
 # =====================================================
 # BUILD STORES (Embed question only)
-# ✅ renamed to bust Streamlit cache + bulletproof file skipping
+# IMPORTANT: keep name build_stores() so your deployment trace matches.
 # =====================================================
 @st.cache_resource
-def build_stores_v2():
+def build_stores():
     if not os.path.isdir(DATA_DIR):
         raise RuntimeError("❌ /data folder not found")
 
@@ -445,11 +454,11 @@ def build_stores_v2():
         if is_sop_file(fname):
             continue
 
-        # ✅ skip images/binary EVEN if no extension
+        # skip non-text + binary
         if not is_text_candidate(fname, fp):
             continue
 
-        text = read_text_safe(fp)
+        text = read_text(fp)
         if not text.strip():
             continue
 
@@ -475,7 +484,7 @@ def build_stores_v2():
     vs_dubizzle = FAISS.from_documents(docs_dubizzle, emb) if docs_dubizzle else None
     return vs_all, vs_bayut, vs_dubizzle
 
-VS_ALL, VS_BAYUT, VS_DUBIZZLE = build_stores_v2()
+VS_ALL, VS_BAYUT, VS_DUBIZZLE = build_stores()
 
 def pick_store(mode: str):
     if mode == "Bayut":
