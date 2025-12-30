@@ -63,15 +63,12 @@ def _find_background_image():
     if os.path.isdir(DATA_DIR):
         imgs_data = [x for x in os.listdir(DATA_DIR) if x.lower().endswith((".png", ".jpg", ".jpeg"))]
         if imgs_data:
-            # IMPORTANT: if you have other images in /data, this might pick the wrong one.
-            # That's why we always recommend naming it exactly background.png above.
             return os.path.join(DATA_DIR, sorted(imgs_data)[0])
 
     return None
 
 @st.cache_data(show_spinner=False)
 def _img_to_data_uri(path: str, mtime: float):
-    # mtime is only used to bust cache when image changes
     with open(path, "rb") as f:
         b64 = base64.b64encode(f.read()).decode("utf-8")
     ext = os.path.splitext(path)[1].lower()
@@ -96,7 +93,6 @@ st.markdown(
         --app-bg: {bg_value};
       }}
 
-      /* FULL WEBSITE BACKGROUND (ALL LAYERS) */
       html, body {{
         height: 100%;
         min-height: 100%;
@@ -134,7 +130,6 @@ st.markdown(
         background: transparent !important;
       }}
 
-      /* MAIN CONTENT GLASS CARD */
       section.main > div.block-container {{
         max-width: 980px !important;
         padding-top: 2rem !important;
@@ -171,7 +166,6 @@ st.markdown(
 
       div.stButton > button {{ border-radius: 10px; }}
 
-      /* Smaller Ultra-Fast / Thinking buttons */
       .small-btn div.stButton > button {{
         padding-top: 0.35rem !important;
         padding-bottom: 0.35rem !important;
@@ -273,33 +267,6 @@ st.session_state.setdefault("chat", {"General": [], "Bayut": [], "Dubizzle": []}
 # =====================================================
 # HELPERS
 # =====================================================
-def read_text(fp: str) -> str:
-    # Try common encodings, then fallback without crashing
-    for enc in ("utf-8", "utf-8-sig", "cp1252", "latin-1"):
-        try:
-            with open(fp, "r", encoding=enc) as f:
-                return f.read()
-        except UnicodeDecodeError:
-            continue
-        except Exception:
-            break
-
-    # last resort: ignore bad bytes
-    try:
-        with open(fp, "r", encoding="utf-8", errors="ignore") as f:
-            return f.read()
-    except Exception:
-        return ""
-
-def is_text_candidate(filename: str) -> bool:
-    n = filename.lower().strip()
-    # skip obvious binary files
-    if n.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".pdf", ".zip", ".rar")):
-        return False
-    # allow .txt and also files with no extension (like "General-QA")
-    ext = os.path.splitext(n)[1]
-    return (ext == ".txt") or (ext == "")
-
 def is_sop_file(filename: str) -> bool:
     return "sop" in filename.lower()
 
@@ -312,6 +279,48 @@ def bucket_from_filename(filename: str) -> str:
     if "dubizzle" in n:
         return "dubizzle"
     return "general"
+
+def looks_binary_file(fp: str) -> bool:
+    # Detect binary even when file has no extension (prevents UnicodeDecodeError forever)
+    try:
+        with open(fp, "rb") as f:
+            chunk = f.read(4096)
+        if not chunk:
+            return False
+        if b"\x00" in chunk:
+            return True
+        # many non-printable bytes -> binary
+        text_chars = bytearray({7, 8, 9, 10, 12, 13, 27} | set(range(0x20, 0x100)))
+        nontext = chunk.translate(None, text_chars)
+        return (len(nontext) / max(1, len(chunk))) > 0.30
+    except Exception:
+        return True
+
+def is_text_candidate(filename: str, fp: str) -> bool:
+    n = filename.lower().strip()
+
+    # Skip obvious binary by extension
+    if n.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".pdf", ".zip", ".rar")):
+        return False
+
+    # If it has an extension, allow only .txt
+    ext = os.path.splitext(n)[1]
+    if ext and ext != ".txt":
+        return False
+
+    # If no extension OR .txt, still guard against binary
+    if looks_binary_file(fp):
+        return False
+
+    return True
+
+def read_text_safe(fp: str) -> str:
+    # Never raise UnicodeDecodeError
+    try:
+        with open(fp, "r", encoding="utf-8", errors="ignore") as f:
+            return f.read()
+    except Exception:
+        return ""
 
 def parse_qa_pairs(text: str):
     pairs = []
@@ -417,9 +426,10 @@ def get_embeddings():
 
 # =====================================================
 # BUILD STORES (Embed question only)
+# ✅ renamed to bust Streamlit cache + bulletproof file skipping
 # =====================================================
 @st.cache_resource
-def build_stores():
+def build_stores_v2():
     if not os.path.isdir(DATA_DIR):
         raise RuntimeError("❌ /data folder not found")
 
@@ -431,13 +441,15 @@ def build_stores():
         if not os.path.isfile(fp) or fname.startswith("."):
             continue
 
-        # ✅ skip SOPs + skip images/binary
+        # skip SOPs
         if is_sop_file(fname):
             continue
-        if not is_text_candidate(fname):
+
+        # ✅ skip images/binary EVEN if no extension
+        if not is_text_candidate(fname, fp):
             continue
 
-        text = read_text(fp)
+        text = read_text_safe(fp)
         if not text.strip():
             continue
 
@@ -463,7 +475,7 @@ def build_stores():
     vs_dubizzle = FAISS.from_documents(docs_dubizzle, emb) if docs_dubizzle else None
     return vs_all, vs_bayut, vs_dubizzle
 
-VS_ALL, VS_BAYUT, VS_DUBIZZLE = build_stores()
+VS_ALL, VS_BAYUT, VS_DUBIZZLE = build_stores_v2()
 
 def pick_store(mode: str):
     if mode == "Bayut":
