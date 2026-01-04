@@ -28,7 +28,7 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 st.markdown(
     """
     <style>
-      .center { text-align:center; }
+      .center { text-align: center; }
 
       section.main > div.block-container{
         max-width: 980px !important;
@@ -55,7 +55,9 @@ st.markdown(
         line-height: 1.6;
       }
 
-      div.stButton > button { border-radius: 10px; }
+      div.stButton > button {
+        border-radius: 10px;
+      }
     </style>
     """,
     unsafe_allow_html=True
@@ -66,7 +68,10 @@ st.markdown(
 # =====================================================
 st.session_state.setdefault("tool_mode", "General")
 st.session_state.setdefault("answer_mode", "Ultra-Fast")
-st.session_state.setdefault("chat", {"General": [], "Bayut": [], "dubizzle": []})
+st.session_state.setdefault(
+    "chat",
+    {"General": [], "Bayut": [], "dubizzle": []}
+)
 
 # =====================================================
 # HELPERS
@@ -111,7 +116,7 @@ def get_embeddings():
     )
 
 # =====================================================
-# BUILD STORES
+# BUILD VECTOR STORES
 # =====================================================
 @st.cache_resource
 def build_stores():
@@ -147,32 +152,21 @@ def pick_store():
     }[st.session_state.tool_mode]
 
 # =====================================================
-# HEADER
+# HEADER (LOCK ICON WORKS)
 # =====================================================
-st.markdown(
-    """
-    <h1 class="center">
-      <span style="color:#0E8A6D;">Bayut</span> &
-      <span style="color:#D71920;">dubizzle</span> AI Content Assistant
-    </h1>
-    <p class="center">Internal AI Assistant</p>
-    """,
-    unsafe_allow_html=True
-)
+st.title("Bayut & dubizzle AI Content Assistant")
+st.caption("Internal AI Assistant")
 
 # =====================================================
 # TOOL MODE BUTTONS
 # =====================================================
-tool_cols = st.columns([2, 3, 3, 3, 2])
-with tool_cols[1]:
-    if st.button("General", use_container_width=True):
-        st.session_state.tool_mode = "General"
-with tool_cols[2]:
-    if st.button("Bayut", use_container_width=True):
-        st.session_state.tool_mode = "Bayut"
-with tool_cols[3]:
-    if st.button("dubizzle", use_container_width=True):
-        st.session_state.tool_mode = "dubizzle"
+cols = st.columns(3)
+if cols[0].button("General", use_container_width=True):
+    st.session_state.tool_mode = "General"
+if cols[1].button("Bayut", use_container_width=True):
+    st.session_state.tool_mode = "Bayut"
+if cols[2].button("dubizzle", use_container_width=True):
+    st.session_state.tool_mode = "dubizzle"
 
 st.markdown(
     f"<h3 class='center'>{st.session_state.tool_mode} Assistant</h3>",
@@ -180,24 +174,22 @@ st.markdown(
 )
 
 # =====================================================
-# ANSWER MODE BUTTONS (Ultra-Fast / Thinking)
+# ANSWER MODE
 # =====================================================
-mode_cols = st.columns([5, 2, 2, 5])
-with mode_cols[1]:
-    if st.button("Ultra-Fast", use_container_width=True):
-        st.session_state.answer_mode = "Ultra-Fast"
-with mode_cols[2]:
-    if st.button("Thinking", use_container_width=True):
-        st.session_state.answer_mode = "Thinking"
+mode_cols = st.columns(2)
+if mode_cols[0].button("Ultra-Fast", use_container_width=True):
+    st.session_state.answer_mode = "Ultra-Fast"
+if mode_cols[1].button("Thinking", use_container_width=True):
+    st.session_state.answer_mode = "Thinking"
 
-st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
+st.markdown("<br>", unsafe_allow_html=True)
 
 # =====================================================
 # INPUT
 # =====================================================
 q = st.text_input("Type your question here…")
 
-btn_cols = st.columns([1, 1])
+btn_cols = st.columns(2)
 ask = btn_cols[0].button("Ask", use_container_width=True)
 clear = btn_cols[1].button("Clear chat", use_container_width=True)
 
@@ -220,12 +212,7 @@ if ask and q:
 
         results = vs.similarity_search(q, k=8 if thinking else 4)
         answers = [r.metadata["answer"] for r in results if r.metadata.get("answer")]
-
-        final = (
-            answers[0]
-            if not thinking
-            else format_thinking_answer(answers[0], answers[1:])
-        ) if answers else "No relevant answer found."
+        final = answers[0] if answers else "No relevant answer found."
 
     st.session_state.chat[st.session_state.tool_mode].append({"q": q, "a": final})
     st.rerun()
