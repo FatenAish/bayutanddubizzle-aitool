@@ -27,36 +27,55 @@ ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 BG_PATH = os.path.join(ASSETS_DIR, "background.png")
 
 # =====================================================
-# BACKGROUND
+# BACKGROUND (ROBUST)
 # =====================================================
 def set_background(image_path: str):
     if not os.path.isfile(image_path):
+        st.warning(
+            f"Background image not found: {image_path}\n\n"
+            f"ASSETS_DIR exists: {os.path.isdir(ASSETS_DIR)}\n"
+            f"Assets files: {os.listdir(ASSETS_DIR) if os.path.isdir(ASSETS_DIR) else 'NO assets folder'}"
+        )
         return
 
     with open(image_path, "rb") as f:
-        b64 = base64.b64encode(f.read()).decode()
+        b64 = base64.b64encode(f.read()).decode("utf-8")
 
     st.markdown(
         f"""
         <style>
-          /* FULL PAGE BACKGROUND */
+          html, body {{
+            height: 100%;
+          }}
+
+          /* Streamlit main app wrappers (covers different versions) */
+          .stApp,
+          [data-testid="stApp"],
           [data-testid="stAppViewContainer"] {{
-            background: url("data:image/png;base64,{b64}") no-repeat center center fixed;
-            background-size: cover;
+            background-image: url("data:image/png;base64,{b64}") !important;
+            background-size: cover !important;
+            background-repeat: no-repeat !important;
+            background-position: center center !important;
+            background-attachment: fixed !important;
           }}
 
-          /* keep header transparent */
+          /* header transparent */
           [data-testid="stHeader"] {{
-            background: transparent;
+            background: transparent !important;
           }}
 
-          /* make content readable while showing background */
+          /* sidebar transparent */
+          [data-testid="stSidebar"] > div {{
+            background: rgba(255,255,255,0.85) !important;
+          }}
+
+          /* keep main content readable */
           section.main > div.block-container{{
             max-width: 980px !important;
             padding-top: 2rem !important;
             padding-bottom: 2rem !important;
-            background: rgba(255,255,255,0.92);
-            border-radius: 18px;
+            background: rgba(255,255,255,0.92) !important;
+            border-radius: 18px !important;
           }}
         </style>
         """,
@@ -222,7 +241,7 @@ st.markdown(
 )
 
 # =====================================================
-# ANSWER MODE BUTTONS (Ultra-Fast / Thinking)
+# ANSWER MODE BUTTONS
 # =====================================================
 mode_cols = st.columns([5, 2, 2, 5])
 with mode_cols[1]:
