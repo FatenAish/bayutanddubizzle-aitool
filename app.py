@@ -16,7 +16,6 @@ st.set_page_config(
     page_title="Bayut & Dubizzle AI Content Assistant",
     layout="wide"
 )
-
 # =====================================================
 # PATHS
 # =====================================================
