@@ -12,7 +12,7 @@ from langchain_core.documents import Document
 # PAGE CONFIG
 # =====================================================
 st.set_page_config(
-    page_title="Bayut & Dubizzle AI Content Assistant",
+    page_title="Bayut & dubizzle AI Content Assistant",
     layout="wide"
 )
 
@@ -23,7 +23,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 
 # =====================================================
-# UI STYLES (NO BACKGROUND – SAFE)
+# UI STYLES (NO BACKGROUND)
 # =====================================================
 st.markdown(
     """
@@ -55,9 +55,7 @@ st.markdown(
         line-height: 1.6;
       }
 
-      div.stButton > button {
-        border-radius: 10px;
-      }
+      div.stButton > button { border-radius: 10px; }
     </style>
     """,
     unsafe_allow_html=True
@@ -68,7 +66,7 @@ st.markdown(
 # =====================================================
 st.session_state.setdefault("tool_mode", "General")
 st.session_state.setdefault("answer_mode", "Ultra-Fast")
-st.session_state.setdefault("chat", {"General": [], "Bayut": [], "Dubizzle": []})
+st.session_state.setdefault("chat", {"General": [], "Bayut": [], "dubizzle": []})
 
 # =====================================================
 # HELPERS
@@ -81,7 +79,7 @@ def bucket_from_filename(name):
     if "bayut" in n:
         return "Bayut"
     if "dubizzle" in n:
-        return "Dubizzle"
+        return "dubizzle"
     return "General"
 
 def read_text(fp):
@@ -90,7 +88,7 @@ def read_text(fp):
 
 def parse_qa_pairs(text):
     pattern = re.compile(
-        r"Q[:\\-]\\s*(.*?)\\nA[:\\-]\\s*(.*?)(?=\\nQ[:\\-]|\\Z)",
+        r"Q[:\-]\s*(.*?)\nA[:\-]\s*(.*?)(?=\nQ[:\-]|\Z)",
         re.S | re.I
     )
     return [(q.strip(), a.strip()) for q, a in pattern.findall(text)]
@@ -101,7 +99,7 @@ def format_thinking_answer(primary, extras):
     for x in out:
         if x and x not in cleaned:
             cleaned.append(x)
-    return "\\n\\n".join(cleaned[:4])
+    return "\n\n".join(cleaned[:4])
 
 # =====================================================
 # EMBEDDINGS
@@ -121,7 +119,7 @@ def build_stores():
         return None, None, None
 
     emb = get_embeddings()
-    stores = {"General": [], "Bayut": [], "Dubizzle": []}
+    stores = {"General": [], "Bayut": [], "dubizzle": []}
 
     for f in os.listdir(DATA_DIR):
         if not f.lower().endswith(".txt") or is_sop_file(f):
@@ -136,7 +134,7 @@ def build_stores():
     return (
         FAISS.from_documents(stores["General"], emb) if stores["General"] else None,
         FAISS.from_documents(stores["Bayut"], emb) if stores["Bayut"] else None,
-        FAISS.from_documents(stores["Dubizzle"], emb) if stores["Dubizzle"] else None,
+        FAISS.from_documents(stores["dubizzle"], emb) if stores["dubizzle"] else None,
     )
 
 VS_ALL, VS_BAYUT, VS_DUBIZZLE = build_stores()
@@ -145,25 +143,36 @@ def pick_store():
     return {
         "General": VS_ALL,
         "Bayut": VS_BAYUT,
-        "Dubizzle": VS_DUBIZZLE
+        "dubizzle": VS_DUBIZZLE
     }[st.session_state.tool_mode]
 
 # =====================================================
-# HEADER (LOCK ICON RETURNS HERE ✅)
+# HEADER
 # =====================================================
-st.title("Bayut & Dubizzle AI Content Assistant")
-st.caption("Internal AI Assistant")
+st.markdown(
+    """
+    <h1 class="center">
+      <span style="color:#0E8A6D;">Bayut</span> &
+      <span style="color:#D71920;">dubizzle</span> AI Content Assistant
+    </h1>
+    <p class="center">Internal AI Assistant</p>
+    """,
+    unsafe_allow_html=True
+)
 
 # =====================================================
 # TOOL MODE BUTTONS
 # =====================================================
-cols = st.columns(3)
-if cols[0].button("General", use_container_width=True):
-    st.session_state.tool_mode = "General"
-if cols[1].button("Bayut", use_container_width=True):
-    st.session_state.tool_mode = "Bayut"
-if cols[2].button("Dubizzle", use_container_width=True):
-    st.session_state.tool_mode = "Dubizzle"
+tool_cols = st.columns([2, 3, 3, 3, 2])
+with tool_cols[1]:
+    if st.button("General", use_container_width=True):
+        st.session_state.tool_mode = "General"
+with tool_cols[2]:
+    if st.button("Bayut", use_container_width=True):
+        st.session_state.tool_mode = "Bayut"
+with tool_cols[3]:
+    if st.button("dubizzle", use_container_width=True):
+        st.session_state.tool_mode = "dubizzle"
 
 st.markdown(
     f"<h3 class='center'>{st.session_state.tool_mode} Assistant</h3>",
@@ -171,22 +180,24 @@ st.markdown(
 )
 
 # =====================================================
-# ANSWER MODE
+# ANSWER MODE BUTTONS (Ultra-Fast / Thinking)
 # =====================================================
-mode_cols = st.columns(2)
-if mode_cols[0].button("Ultra-Fast", use_container_width=True):
-    st.session_state.answer_mode = "Ultra-Fast"
-if mode_cols[1].button("Thinking", use_container_width=True):
-    st.session_state.answer_mode = "Thinking"
+mode_cols = st.columns([5, 2, 2, 5])
+with mode_cols[1]:
+    if st.button("Ultra-Fast", use_container_width=True):
+        st.session_state.answer_mode = "Ultra-Fast"
+with mode_cols[2]:
+    if st.button("Thinking", use_container_width=True):
+        st.session_state.answer_mode = "Thinking"
 
-st.markdown("<br>", unsafe_allow_html=True)
+st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
 
 # =====================================================
 # INPUT
 # =====================================================
 q = st.text_input("Type your question here…")
 
-btn_cols = st.columns(2)
+btn_cols = st.columns([1, 1])
 ask = btn_cols[0].button("Ask", use_container_width=True)
 clear = btn_cols[1].button("Clear chat", use_container_width=True)
 
@@ -209,7 +220,12 @@ if ask and q:
 
         results = vs.similarity_search(q, k=8 if thinking else 4)
         answers = [r.metadata["answer"] for r in results if r.metadata.get("answer")]
-        final = answers[0] if answers else "No relevant answer found."
+
+        final = (
+            answers[0]
+            if not thinking
+            else format_thinking_answer(answers[0], answers[1:])
+        ) if answers else "No relevant answer found."
 
     st.session_state.chat[st.session_state.tool_mode].append({"q": q, "a": final})
     st.rerun()
@@ -220,7 +236,7 @@ if ask and q:
 bubble_class = {
     "General": "q-general",
     "Bayut": "q-bayut",
-    "Dubizzle": "q-dubizzle",
+    "dubizzle": "q-dubizzle",
 }[st.session_state.tool_mode]
 
 for item in reversed(st.session_state.chat[st.session_state.tool_mode]):
