@@ -10,7 +10,7 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_core.documents import Document
 
 # =====================================================
-# PAGE CONFIG
+# PAGE CONFIG (MUST BE FIRST)
 # =====================================================
 st.set_page_config(
     page_title="Bayut & Dubizzle AI Content Assistant",
@@ -22,105 +22,70 @@ st.set_page_config(
 # =====================================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
-
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 BG_PATH = os.path.join(ASSETS_DIR, "background.png")
 
 # =====================================================
-# BACKGROUND (ROBUST)
+# BACKGROUND (STREAMLIT CLOUD SAFE)
 # =====================================================
-def set_background(image_path: str):
-    if not os.path.isfile(image_path):
-        st.warning(
-            f"Background image not found: {image_path}\n\n"
-            f"ASSETS_DIR exists: {os.path.isdir(ASSETS_DIR)}\n"
-            f"Assets files: {os.listdir(ASSETS_DIR) if os.path.isdir(ASSETS_DIR) else 'NO assets folder'}"
-        )
-        return
-
-    with open(image_path, "rb") as f:
-        b64 = base64.b64encode(f.read()).decode("utf-8")
+def set_background():
+    with open(BG_PATH, "rb") as f:
+        b64 = base64.b64encode(f.read()).decode()
 
     st.markdown(
         f"""
         <style>
-          html, body {{
-            height: 100%;
-          }}
+        /* FULL APP BACKGROUND */
+        .stApp {{
+            background: url("data:image/png;base64,{b64}") center / cover no-repeat fixed;
+        }}
 
-          /* Streamlit main app wrappers (covers different versions) */
-          .stApp,
-          [data-testid="stApp"],
-          [data-testid="stAppViewContainer"] {{
-            background-image: url("data:image/png;base64,{b64}") !important;
-            background-size: cover !important;
-            background-repeat: no-repeat !important;
-            background-position: center center !important;
-            background-attachment: fixed !important;
-          }}
-
-          /* header transparent */
-          [data-testid="stHeader"] {{
+        /* REMOVE WHITE PAGE */
+        section.main > div.block-container {{
             background: transparent !important;
-          }}
+            max-width: 1100px;
+            padding-top: 2rem;
+            padding-bottom: 3rem;
+        }}
 
-          /* sidebar transparent */
-          [data-testid="stSidebar"] > div {{
-            background: rgba(255,255,255,0.85) !important;
-          }}
+        /* FLOATING CONTENT CARD */
+        .content-card {{
+            background: rgba(255,255,255,0.92);
+            border-radius: 20px;
+            padding: 2.5rem;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.08);
+        }}
 
-          /* keep main content readable */
-          section.main > div.block-container{{
-            max-width: 980px !important;
-            padding-top: 2rem !important;
-            padding-bottom: 2rem !important;
-            background: rgba(255,255,255,0.92) !important;
-            border-radius: 18px !important;
-          }}
+        .center {{ text-align: center; }}
+
+        .q-bubble {{
+            padding: 10px 14px;
+            border-radius: 14px;
+            max-width: 85%;
+            width: fit-content;
+            font-weight: 600;
+            margin: 10px 0 8px;
+            border: 1px solid rgba(0,0,0,0.06);
+        }}
+        .q-general {{ background:#f2f2f2; }}
+        .q-bayut {{ background:#e6f4ef; }}
+        .q-dubizzle {{ background:#fdeaea; }}
+
+        .answer {{
+            margin-left: 6px;
+            margin-bottom: 14px;
+            line-height: 1.6;
+        }}
+
+        div.stButton > button {{
+            border-radius: 12px;
+        }}
         </style>
         """,
         unsafe_allow_html=True
     )
 
-set_background(BG_PATH)
-
-# =====================================================
-# UI STYLES
-# =====================================================
-st.markdown(
-    """
-    <style>
-      .center { text-align:center; }
-
-      .q-bubble{
-        padding: 10px 14px;
-        border-radius: 14px;
-        max-width: 85%;
-        width: fit-content;
-        font-weight: 600;
-        margin: 10px 0 8px;
-        border: 1px solid rgba(0,0,0,0.06);
-      }
-      .q-general { background:#f2f2f2; }
-      .q-bayut { background:#e6f4ef; }
-      .q-dubizzle { background:#fdeaea; }
-
-      .answer{
-        margin-left: 6px;
-        margin-bottom: 14px;
-        line-height: 1.6;
-      }
-
-      div.stButton > button { border-radius: 10px; }
-
-      .small-btn div.stButton > button{
-        padding: 0.4rem 0 !important;
-        font-size: 0.95rem !important;
-      }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
+set_background()
 
 # =====================================================
 # SESSION STATE
@@ -156,11 +121,11 @@ def parse_qa_pairs(text):
 
 def format_thinking_answer(primary, extras):
     out = [primary] + extras
-    cleaned = []
+    seen = []
     for x in out:
-        if x and x not in cleaned:
-            cleaned.append(x)
-    return "\n\n".join(cleaned[:4])
+        if x and x not in seen:
+            seen.append(x)
+    return "\n\n".join(seen[:4])
 
 # =====================================================
 # EMBEDDINGS
@@ -172,7 +137,7 @@ def get_embeddings():
     )
 
 # =====================================================
-# BUILD STORES
+# VECTOR STORES
 # =====================================================
 @st.cache_resource
 def build_stores():
@@ -208,8 +173,11 @@ def pick_store():
     }[st.session_state.tool_mode]
 
 # =====================================================
-# HEADER
+# CONTENT START
 # =====================================================
+st.markdown("<div class='content-card'>", unsafe_allow_html=True)
+
+# HEADER
 st.markdown(
     """
     <h1 class="center">
@@ -221,59 +189,41 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# =====================================================
-# TOOL MODE BUTTONS
-# =====================================================
-tool_cols = st.columns([2, 3, 3, 3, 2])
-with tool_cols[1]:
-    if st.button("General", use_container_width=True):
-        st.session_state.tool_mode = "General"
-with tool_cols[2]:
-    if st.button("Bayut", use_container_width=True):
-        st.session_state.tool_mode = "Bayut"
-with tool_cols[3]:
-    if st.button("Dubizzle", use_container_width=True):
-        st.session_state.tool_mode = "Dubizzle"
+# TOOL MODE
+cols = st.columns(3)
+if cols[0].button("General", use_container_width=True):
+    st.session_state.tool_mode = "General"
+if cols[1].button("Bayut", use_container_width=True):
+    st.session_state.tool_mode = "Bayut"
+if cols[2].button("Dubizzle", use_container_width=True):
+    st.session_state.tool_mode = "Dubizzle"
 
-st.markdown(
-    f"<h3 class='center'>{st.session_state.tool_mode} Assistant</h3>",
-    unsafe_allow_html=True
-)
+st.markdown(f"<h3 class='center'>{st.session_state.tool_mode} Assistant</h3>", unsafe_allow_html=True)
 
-# =====================================================
-# ANSWER MODE BUTTONS
-# =====================================================
-mode_cols = st.columns([5, 2, 2, 5])
-with mode_cols[1]:
-    if st.button("Ultra-Fast", use_container_width=True):
-        st.session_state.answer_mode = "Ultra-Fast"
-with mode_cols[2]:
-    if st.button("Thinking", use_container_width=True):
-        st.session_state.answer_mode = "Thinking"
+# ANSWER MODE
+mode_cols = st.columns(2)
+if mode_cols[0].button("Ultra-Fast", use_container_width=True):
+    st.session_state.answer_mode = "Ultra-Fast"
+if mode_cols[1].button("Thinking", use_container_width=True):
+    st.session_state.answer_mode = "Thinking"
 
-st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
+st.markdown("<br>", unsafe_allow_html=True)
 
-# =====================================================
 # INPUT
-# =====================================================
 q = st.text_input("Type your question here…")
 
-btn_cols = st.columns([1, 1])
-ask = btn_cols[0].button("Ask", use_container_width=True)
-clear = btn_cols[1].button("Clear chat", use_container_width=True)
+btns = st.columns(2)
+ask = btns[0].button("Ask", use_container_width=True)
+clear = btns[1].button("Clear chat", use_container_width=True)
 
 if clear:
     st.session_state.chat[st.session_state.tool_mode] = []
     st.rerun()
 
-# =====================================================
 # ANSWER
-# =====================================================
 if ask and q:
     vs = pick_store()
-    if vs is None:
-        final = "No internal Q&A data found."
-    else:
+    if vs:
         thinking = st.session_state.answer_mode == "Thinking"
         if thinking:
             with st.spinner("Thinking…"):
@@ -281,19 +231,14 @@ if ask and q:
 
         results = vs.similarity_search(q, k=8 if thinking else 4)
         answers = [r.metadata["answer"] for r in results if r.metadata.get("answer")]
-
-        final = (
-            answers[0]
-            if not thinking
-            else format_thinking_answer(answers[0], answers[1:])
-        ) if answers else "No relevant answer found."
+        final = answers[0] if answers else "No relevant answer found."
+    else:
+        final = "No internal Q&A data found."
 
     st.session_state.chat[st.session_state.tool_mode].append({"q": q, "a": final})
     st.rerun()
 
-# =====================================================
-# CHAT HISTORY
-# =====================================================
+# CHAT
 bubble_class = {
     "General": "q-general",
     "Bayut": "q-bayut",
@@ -301,12 +246,9 @@ bubble_class = {
 }[st.session_state.tool_mode]
 
 for item in reversed(st.session_state.chat[st.session_state.tool_mode]):
-    st.markdown(
-        f"<div class='q-bubble {bubble_class}'>{html.escape(item['q'])}</div>",
-        unsafe_allow_html=True
-    )
-    st.markdown(
-        f"<div class='answer'>{item['a']}</div>",
-        unsafe_allow_html=True
-    )
+    st.markdown(f"<div class='q-bubble {bubble_class}'>{html.escape(item['q'])}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='answer'>{item['a']}</div>", unsafe_allow_html=True)
     st.markdown("---")
+
+# CONTENT END
+st.markdown("</div>", unsafe_allow_html=True)
