@@ -12,7 +12,7 @@ from langchain_core.documents import Document
 # PAGE CONFIG
 # =====================================================
 st.set_page_config(
-    page_title="Bayut & Dubizzle AI Content Assistant",
+    page_title="Bayut & dubizzle AI Content Assistant",
     layout="wide"
 )
 
@@ -23,43 +23,38 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 
 # =====================================================
-# UI STYLES (STABLE / NO BACKGROUND)
+# UI STYLES (NO BACKGROUND — GUARANTEED)
 # =====================================================
 st.markdown(
     """
     <style>
-      .center { text-align:center; }
-
-      section.main > div.block-container{
-        max-width: 980px !important;
-        padding-top: 2rem !important;
-        padding-bottom: 2rem !important;
+      section.main > div.block-container {
+        max-width: 980px;
+        padding: 2rem;
       }
 
-      .q-bubble{
+      .center { text-align: center; }
+
+      .q-bubble {
         padding: 10px 14px;
         border-radius: 14px;
-        max-width: 85%;
-        width: fit-content;
+        margin: 10px 0 6px;
         font-weight: 600;
-        margin: 10px 0 8px;
         border: 1px solid rgba(0,0,0,0.06);
+        max-width: 85%;
       }
-      .q-general { background:#f2f2f2; }
-      .q-bayut { background:#e6f4ef; }
-      .q-dubizzle { background:#fdeaea; }
 
-      .answer{
-        margin-left: 6px;
+      .q-general { background: #f2f2f2; }
+      .q-bayut { background: #e6f4ef; }
+      .q-dubizzle { background: #fdeaea; }
+
+      .answer {
         margin-bottom: 14px;
         line-height: 1.6;
       }
 
-      div.stButton > button { border-radius: 10px; }
-
-      .small-btn div.stButton > button{
-        padding: 0.4rem 0 !important;
-        font-size: 0.95rem !important;
+      button {
+        border-radius: 10px !important;
       }
     </style>
     """,
@@ -71,40 +66,31 @@ st.markdown(
 # =====================================================
 st.session_state.setdefault("tool_mode", "General")
 st.session_state.setdefault("answer_mode", "Ultra-Fast")
-st.session_state.setdefault("chat", {"General": [], "Bayut": [], "Dubizzle": []})
+st.session_state.setdefault(
+    "chat",
+    {"General": [], "Bayut": [], "dubizzle": []}
+)
 
 # =====================================================
 # HELPERS
 # =====================================================
-def is_sop_file(name):
+def is_sop_file(name: str) -> bool:
     return "sop" in name.lower()
 
-def bucket_from_filename(name):
+def bucket_from_filename(name: str) -> str:
     n = name.lower()
     if "bayut" in n:
         return "Bayut"
     if "dubizzle" in n:
-        return "Dubizzle"
+        return "dubizzle"
     return "General"
 
-def read_text(fp):
-    with open(fp, "rb") as f:
-        return f.read().decode("utf-8", errors="ignore")
-
-def parse_qa_pairs(text):
+def parse_qa_pairs(text: str):
     pattern = re.compile(
         r"Q[:\-]\s*(.*?)\nA[:\-]\s*(.*?)(?=\nQ[:\-]|\Z)",
         re.S | re.I
     )
     return [(q.strip(), a.strip()) for q, a in pattern.findall(text)]
-
-def format_thinking_answer(primary, extras):
-    out = [primary] + extras
-    cleaned = []
-    for x in out:
-        if x and x not in cleaned:
-            cleaned.append(x)
-    return "\n\n".join(cleaned[:4])
 
 # =====================================================
 # EMBEDDINGS
@@ -116,7 +102,7 @@ def get_embeddings():
     )
 
 # =====================================================
-# BUILD STORES
+# BUILD VECTOR STORES
 # =====================================================
 @st.cache_resource
 def build_stores():
@@ -124,22 +110,22 @@ def build_stores():
         return None, None, None
 
     emb = get_embeddings()
-    stores = {"General": [], "Bayut": [], "Dubizzle": []}
+    stores = {"General": [], "Bayut": [], "dubizzle": []}
 
     for f in os.listdir(DATA_DIR):
         if not f.lower().endswith(".txt") or is_sop_file(f):
             continue
 
-        fp = os.path.join(DATA_DIR, f)
-        for q, a in parse_qa_pairs(read_text(fp)):
-            doc = Document(page_content=q, metadata={"answer": a})
-            stores["General"].append(doc)
-            stores[bucket_from_filename(f)].append(doc)
+        with open(os.path.join(DATA_DIR, f), "r", encoding="utf-8", errors="ignore") as fh:
+            for q, a in parse_qa_pairs(fh.read()):
+                doc = Document(page_content=q, metadata={"answer": a})
+                stores["General"].append(doc)
+                stores[bucket_from_filename(f)].append(doc)
 
     return (
         FAISS.from_documents(stores["General"], emb) if stores["General"] else None,
         FAISS.from_documents(stores["Bayut"], emb) if stores["Bayut"] else None,
-        FAISS.from_documents(stores["Dubizzle"], emb) if stores["Dubizzle"] else None,
+        FAISS.from_documents(stores["dubizzle"], emb) if stores["dubizzle"] else None,
     )
 
 VS_ALL, VS_BAYUT, VS_DUBIZZLE = build_stores()
@@ -148,36 +134,25 @@ def pick_store():
     return {
         "General": VS_ALL,
         "Bayut": VS_BAYUT,
-        "Dubizzle": VS_DUBIZZLE
+        "dubizzle": VS_DUBIZZLE
     }[st.session_state.tool_mode]
 
 # =====================================================
 # HEADER
 # =====================================================
-st.markdown(
-    """
-    <h1 class="center">
-      <span style="color:#0E8A6D;">Bayut</span> &
-      <span style="color:#D71920;">Dubizzle</span> AI Content Assistant
-    </h1>
-    <p class="center">Internal AI Assistant</p>
-    """,
-    unsafe_allow_html=True
-)
+st.title("Bayut & dubizzle AI Content Assistant")
+st.caption("Internal AI Assistant")
 
 # =====================================================
 # TOOL MODE BUTTONS
 # =====================================================
-tool_cols = st.columns([2, 3, 3, 3, 2])
-with tool_cols[1]:
-    if st.button("General", use_container_width=True):
-        st.session_state.tool_mode = "General"
-with tool_cols[2]:
-    if st.button("Bayut", use_container_width=True):
-        st.session_state.tool_mode = "Bayut"
-with tool_cols[3]:
-    if st.button("Dubizzle", use_container_width=True):
-        st.session_state.tool_mode = "Dubizzle"
+cols = st.columns(3)
+if cols[0].button("General", use_container_width=True):
+    st.session_state.tool_mode = "General"
+if cols[1].button("Bayut", use_container_width=True):
+    st.session_state.tool_mode = "Bayut"
+if cols[2].button("dubizzle", use_container_width=True):
+    st.session_state.tool_mode = "dubizzle"
 
 st.markdown(
     f"<h3 class='center'>{st.session_state.tool_mode} Assistant</h3>",
@@ -185,26 +160,24 @@ st.markdown(
 )
 
 # =====================================================
-# ANSWER MODE BUTTONS (Ultra-Fast / Thinking)
+# ANSWER MODE
 # =====================================================
-mode_cols = st.columns([5, 2, 2, 5])
-with mode_cols[1]:
-    if st.button("Ultra-Fast", use_container_width=True):
-        st.session_state.answer_mode = "Ultra-Fast"
-with mode_cols[2]:
-    if st.button("Thinking", use_container_width=True):
-        st.session_state.answer_mode = "Thinking"
+mcols = st.columns(2)
+if mcols[0].button("Ultra-Fast", use_container_width=True):
+    st.session_state.answer_mode = "Ultra-Fast"
+if mcols[1].button("Thinking", use_container_width=True):
+    st.session_state.answer_mode = "Thinking"
 
-st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
+st.markdown("<br>", unsafe_allow_html=True)
 
 # =====================================================
 # INPUT
 # =====================================================
 q = st.text_input("Type your question here…")
 
-btn_cols = st.columns([1, 1])
-ask = btn_cols[0].button("Ask", use_container_width=True)
-clear = btn_cols[1].button("Clear chat", use_container_width=True)
+btns = st.columns(2)
+ask = btns[0].button("Ask", use_container_width=True)
+clear = btns[1].button("Clear chat", use_container_width=True)
 
 if clear:
     st.session_state.chat[st.session_state.tool_mode] = []
@@ -215,24 +188,20 @@ if clear:
 # =====================================================
 if ask and q:
     vs = pick_store()
-    if vs is None:
-        final = "No internal Q&A data found."
-    else:
+    if vs:
         thinking = st.session_state.answer_mode == "Thinking"
         if thinking:
             with st.spinner("Thinking…"):
                 time.sleep(0.3)
 
-        results = vs.similarity_search(q, k=8 if thinking else 4)
-        answers = [r.metadata["answer"] for r in results if r.metadata.get("answer")]
+        res = vs.similarity_search(q, k=1)
+        final = res[0].metadata["answer"] if res else "No relevant answer found."
+    else:
+        final = "No internal Q&A data found."
 
-        final = (
-            answers[0]
-            if not thinking
-            else format_thinking_answer(answers[0], answers[1:])
-        ) if answers else "No relevant answer found."
-
-    st.session_state.chat[st.session_state.tool_mode].append({"q": q, "a": final})
+    st.session_state.chat[st.session_state.tool_mode].append(
+        {"q": q, "a": final}
+    )
     st.rerun()
 
 # =====================================================
@@ -241,7 +210,7 @@ if ask and q:
 bubble_class = {
     "General": "q-general",
     "Bayut": "q-bayut",
-    "Dubizzle": "q-dubizzle",
+    "dubizzle": "q-dubizzle",
 }[st.session_state.tool_mode]
 
 for item in reversed(st.session_state.chat[st.session_state.tool_mode]):
