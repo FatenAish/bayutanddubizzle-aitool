@@ -2,6 +2,7 @@ import os
 import re
 import html
 import time
+import base64
 import streamlit as st
 
 from langchain_community.vectorstores import FAISS
@@ -22,19 +23,55 @@ st.set_page_config(
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 
+ASSETS_DIR = os.path.join(BASE_DIR, "assets")
+BG_PATH = os.path.join(ASSETS_DIR, "background.png")
+
 # =====================================================
-# UI STYLES (STABLE / NO BACKGROUND)
+# BACKGROUND
+# =====================================================
+def set_background(image_path: str):
+    if not os.path.isfile(image_path):
+        return
+
+    with open(image_path, "rb") as f:
+        b64 = base64.b64encode(f.read()).decode()
+
+    st.markdown(
+        f"""
+        <style>
+          /* FULL PAGE BACKGROUND */
+          [data-testid="stAppViewContainer"] {{
+            background: url("data:image/png;base64,{b64}") no-repeat center center fixed;
+            background-size: cover;
+          }}
+
+          /* keep header transparent */
+          [data-testid="stHeader"] {{
+            background: transparent;
+          }}
+
+          /* make content readable while showing background */
+          section.main > div.block-container{{
+            max-width: 980px !important;
+            padding-top: 2rem !important;
+            padding-bottom: 2rem !important;
+            background: rgba(255,255,255,0.92);
+            border-radius: 18px;
+          }}
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
+set_background(BG_PATH)
+
+# =====================================================
+# UI STYLES
 # =====================================================
 st.markdown(
     """
     <style>
       .center { text-align:center; }
-
-      section.main > div.block-container{
-        max-width: 980px !important;
-        padding-top: 2rem !important;
-        padding-bottom: 2rem !important;
-      }
 
       .q-bubble{
         padding: 10px 14px;
