@@ -3,7 +3,7 @@ import re
 import html
 import time
 import hashlib
-from typing import List, Tuple, Optional, Dict
+from typing import List, Tuple, Optional
 
 import streamlit as st
 from langchain_community.vectorstores import FAISS
@@ -216,17 +216,15 @@ def kb_signature() -> str:
     return hashlib.sha256(raw.encode("utf-8", errors="ignore")).hexdigest()
 
 # =====================================================
-# BUILD STORES (STRICT PER MODE) + KEEP ALL DOCS
+# BUILD STORES (STRICT PER MODE)
 # =====================================================
 @st.cache_resource
 def build_stores(sig: str):
     if not os.path.isdir(DATA_DIR):
-        empty_counts = {"General": 0, "Bayut": 0, "Dubizzle": 0}
-        empty_docs = {"General": [], "Bayut": [], "Dubizzle": []}
-        return None, None, None, empty_counts, empty_docs
+        return None, None, None, {"General": 0, "Bayut": 0, "Dubizzle": 0}
 
     emb = get_embeddings()
-    docs_by_mode: Dict[str, List[Document]] = {"General": [], "Bayut": [], "Dubizzle": []}
+    docs = {"General": [], "Bayut": [], "Dubizzle": []}
 
     for f in os.listdir(DATA_DIR):
         if not f.lower().endswith(".txt") or is_sop_file(f):
@@ -238,10 +236,9 @@ def build_stores(sig: str):
 
         for q, a in parse_qa_pairs(text):
             q = normalize_space(q)
-            a = (a or "").strip()
-
+            a = a.strip()
             content = f"Q: {q}\nA: {a}"
-            docs_by_mode[bucket].append(
+            docs[bucket].append(
                 Document(
                     page_content=content,
                     metadata={
@@ -253,160 +250,182 @@ def build_stores(sig: str):
                 )
             )
 
-    vs_general = FAISS.from_documents(docs_by_mode["General"], emb) if docs_by_mode["General"] else None
-    vs_bayut = FAISS.from_documents(docs_by_mode["Bayut"], emb) if docs_by_mode["Bayut"] else None
-    vs_dubizzle = FAISS.from_documents(docs_by_mode["Dubizzle"], emb) if docs_by_mode["Dubizzle"] else None
+    vs_general = FAISS.from_documents(docs["General"], emb) if docs["General"] else None
+    vs_bayut = FAISS.from_documents(docs["Bayut"], emb) if docs["Bayut"] else None
+    vs_dubizzle = FAISS.from_documents(docs["Dubizzle"], emb) if docs["Dubizzle"] else None
 
-    counts = {k: len(v) for k, v in docs_by_mode.items()}
-    return vs_general, vs_bayut, vs_dubizzle, counts, docs_by_mode
+    counts = {k: len(v) for k, v in docs.items()}
+    return vs_general, vs_bayut, vs_dubizzle, counts
 
 SIG = kb_signature()
-VS_GENERAL, VS_BAYUT, VS_DUBIZZLE, KB_COUNTS, DOCS_BY_MODE = build_stores(SIG)
+VS_GENERAL, VS_BAYUT, VS_DUBIZZLE, KB_COUNTS = build_stores(SIG)
 
 def pick_store():
     return {"General": VS_GENERAL, "Bayut": VS_BAYUT, "Dubizzle": VS_DUBIZZLE}[st.session_state.tool_mode]
 
+def all_docs_from_vs(vs) -> List[Document]:
+    """Get ALL docs from FAISS store so person-queries can be complete (not random top-k)."""
+    if vs is None:
+        return []
+    try:
+        # langchain FAISS stores docs here
+        dct = getattr(vs.docstore, "_dict", None)
+        if isinstance(dct, dict):
+            return list(dct.values())
+    except Exception:
+        pass
+    return []
+
 # =====================================================
-# PERSON ANSWERS (CHATGPT-STYLE, NO FAISS DEPENDENCY)
+# PERSON / ENTITY ANSWERS (CHATGPT-STYLE WITHOUT LLM)
 # =====================================================
 def extract_entity(query: str) -> Optional[str]:
     q = (query or "").strip()
     m = re.match(r"^\s*who\s+is\s+(.+?)\s*\?*\s*$", q, flags=re.I)
     if m:
-        ent = m.group(1).strip()
-        if 1 <= len(ent.split()) <= 6:
+        ent = normalize_space(m.group(1))
+        if 1 <= len(ent) <= 60:
             return ent
     return None
 
-def all_docs_flat() -> List[Document]:
-    out = []
-    for k in ("General", "Bayut", "Dubizzle"):
-        out.extend(DOCS_BY_MODE.get(k, []) or [])
-    return out
+def looks_like_person_name(ent: str) -> bool:
+    e = (ent or "").strip()
+    if not e:
+        return False
+    # single token like "faten" is okay; reject very long sentences
+    return len(e.split()) <= 6
 
-def find_app_owners_answer(docs: List[Document]) -> Optional[str]:
-    # One source of truth: the Q/A "Who is responsible for the app?"
+def find_full_name(ent: str, docs: List[Document]) -> str:
+    ent_l = ent.lower().strip()
+    best = ent.strip().title()
+
+    for d in docs:
+        txt = (d.metadata.get("answer") or "") + "\n" + (d.metadata.get("question") or "")
+        for ln in txt.splitlines():
+            if ent_l in ln.lower():
+                # try to pull a proper name containing the entity
+                # e.g. "Faten Aish", "Sarah Al Nawah"
+                candidates = re.findall(r"([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,4})", ln)
+                for c in candidates:
+                    if ent_l in c.lower():
+                        # prefer longer (first + last)
+                        if len(c.split()) >= len(best.split()):
+                            best = c.strip()
+    return best
+
+def find_app_responsibles(docs: List[Document]) -> Optional[str]:
+    # catch typos: responsible/resposible + app/tool/assistant
+    q_pat = re.compile(r"respon\w*\s+for\s+.*(app|tool|assistant)", re.I)
+    for d in docs:
+        q = (d.metadata.get("question") or "")
+        a = (d.metadata.get("answer") or "").strip()
+        if q_pat.search(q) and a:
+            return a
+    return None
+
+def find_channel_handler_blob(ent: str, docs: List[Document]) -> Optional[str]:
+    ent_l = ent.lower().strip()
     for d in docs:
         q = (d.metadata.get("question") or "").lower()
-        a = (d.metadata.get("answer") or "").strip()
-        if not a:
-            continue
-        if "responsible for the app" in q or "who is responsible for the app" in q:
-            return a.rstrip(".")
+        a = (d.metadata.get("answer") or "")
+        if ("channel handler" in q or "coordination lead" in q) and ent_l in a.lower():
+            return a.strip()
     return None
 
-def extract_role_from_line(line: str, ent_l: str) -> Optional[str]:
-    # Clean prefixes like "Content (AR):"
-    s = line.strip()
-    if ":" in s:
-        left, right = s.split(":", 1)
-        # keep if name is on right
-        s = right.strip()
-
-    # Now try split on em dash
-    if "—" in s:
-        left, role = s.split("—", 1)
-        if ent_l in left.lower():
-            return role.strip()
-    # Try split on " - "
-    if " - " in s:
-        left, role = s.split(" - ", 1)
-        if ent_l in left.lower():
-            return role.strip()
-
-    return None
-
-def compose_person_answer(ent: str) -> str:
+def pick_role_lines(ent: str, docs: List[Document]) -> List[str]:
     ent_l = ent.lower().strip()
-
-    docs = all_docs_flat()  # IMPORTANT: scan everything
-    owners = find_app_owners_answer(docs)
-
-    # Find best full name (if available)
-    full_name = None
-    roles = []
-    channel_handler = False
-
+    lines = []
     for d in docs:
         a = (d.metadata.get("answer") or "")
-        if not a:
-            continue
-
-        # look for lines with the entity
         for ln in a.splitlines():
-            lnl = ln.lower()
-            if ent_l in lnl:
-                # capture a full name like "Faten Aish"
-                m = re.search(r"([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2})", ln)
-                if m:
-                    full_name = full_name or m.group(1).strip()
+            if ent_l in ln.lower():
+                cleaned = normalize_space(ln)
+                if cleaned and cleaned not in lines:
+                    lines.append(cleaned)
+    return lines[:6]
 
-                role = extract_role_from_line(ln, ent_l)
-                if role:
-                    roles.append(role)
+def summarize_channel_handler(a: str) -> str:
+    """
+    Turn your SOP-style bullets into a friendly single sentence.
+    """
+    if not a:
+        return ""
+    # Keep first sentence, then compress bullet verbs if present
+    lines = [normalize_space(x) for x in a.splitlines() if normalize_space(x)]
+    if not lines:
+        return ""
+    first = lines[0].rstrip(".")
+    bullets = [ln for ln in lines[1:] if not ln.lower().startswith("faten")]
+    # take up to 3 actions
+    actions = []
+    for b in bullets:
+        b = b.strip("-• ").strip()
+        if b and b not in actions:
+            actions.append(b.rstrip("."))
+        if len(actions) >= 3:
+            break
 
-                if "channel handler" in lnl:
-                    channel_handler = True
+    if actions:
+        return f"{first}. In practice, that means she helps coordinate between Content and Operations, reviews requests, and tracks progress."
+    return first + "."
 
-    # Dedup roles
-    uniq_roles = []
-    for r in roles:
-        r = r.strip().rstrip(".")
-        if r and r not in uniq_roles:
-            uniq_roles.append(r)
+def compose_person_answer(ent: str, docs_all: List[Document]) -> str:
+    ent_l = ent.lower().strip()
+    name = find_full_name(ent, docs_all)
 
-    name = full_name or ent.strip().title()
+    # 1) app responsible
+    responsibles = find_app_responsibles(docs_all)
+    is_responsible = bool(responsibles and ent_l in responsibles.lower())
+
+    # 2) channel handler detailed blob
+    ch_blob = find_channel_handler_blob(ent, docs_all)
+
+    # 3) role lines (like "Content (AR): Faten Aish — ...")
+    role_lines = pick_role_lines(ent, docs_all)
 
     parts = []
 
-    # Always include owners if relevant to this person
-    if owners:
-        owners_l = owners.lower()
-        if ent_l in owners_l or (ent_l in ("faten", "sarah") and ("faten" in owners_l or "sarah" in owners_l)):
-            # Make it human
-            if "sarah" in owners_l and "faten" in owners_l:
-                parts.append(f"{name} is one of the people responsible for the app, together with Sarah Al Nawah.")
+    if is_responsible and responsibles:
+        # try to keep it natural
+        if "and" in responsibles.lower() or "&" in responsibles:
+            parts.append(f"{name} is one of the people responsible for the Bayut & dubizzle AI Content Assistant (alongside Sarah Al Nawah).")
+        else:
+            parts.append(f"{name} is responsible for the Bayut & dubizzle AI Content Assistant.")
+
+    if ch_blob:
+        parts.append(summarize_channel_handler(ch_blob))
+
+    # If we still want a short “titles” line
+    # Pull the cleanest “X — Y” style descriptor if exists
+    descriptor = ""
+    for ln in role_lines:
+        if "—" in ln or "-" in ln:
+            # keep the part after the dash
+            if "—" in ln:
+                descriptor = ln.split("—", 1)[-1].strip()
             else:
-                parts.append(f"{name} is responsible for the app.")
+                descriptor = ln.split("-", 1)[-1].strip()
+            if descriptor:
+                break
 
-    # Add key role(s)
-    # If they added “Senior Content Specialist…”, it will appear here naturally.
-    picked = []
-    for r in uniq_roles:
-        rl = r.lower()
-        if "senior" in rl or "specialist" in rl:
-            picked.append(r)
-        elif "arabic" in rl or "content corrections" in rl:
-            picked.append(r)
-        elif "channel handler" in rl:
-            picked.append(r)
+    if descriptor:
+        # Avoid repeating "Channel Handler" sentence twice
+        if "channel handler" not in " ".join(parts).lower():
+            parts.append(f"Internally, she’s listed under: {descriptor}.")
 
-    # If nothing matched the filters, just take first role
-    if not picked and uniq_roles:
-        picked = uniq_roles[:1]
-
-    # Turn roles into natural sentence(s)
-    if picked:
-        # Example: "Arabic Content Corrections / Channel Handler"
-        # Keep it clean:
-        role_text = picked[0].replace("/", " and ").strip()
-        parts.append(f"She works on {role_text}.")
-
-    # Channel handler flag (if not already covered)
-    if channel_handler and not any("channel handler" in p.lower() for p in parts):
-        parts.append("She also acts as the Channel Handler for corrections and updates (content coordination).")
-
+    # If nothing found, fallback
     if not parts:
         return f"I couldn’t find clear information about “{ent}” in the internal knowledge files."
 
-    # Final cleanup (avoid repeated "She")
-    out = " ".join(parts)
-    out = re.sub(r"\s+", " ", out).strip()
-    return out
+    # De-dup sentences
+    final_parts = []
+    for p in parts:
+        p = normalize_space(p)
+        if p and p not in final_parts:
+            final_parts.append(p)
 
-# =====================================================
-# ANSWER FROM STORE (NORMAL QUESTIONS)
-# =====================================================
+    return " ".join(final_parts)
+
 def answer_from_store(user_q: str, vs):
     if vs is None:
         return "No internal Q&A data found for this mode."
@@ -417,22 +436,19 @@ def answer_from_store(user_q: str, vs):
             time.sleep(0.10)
 
     ent = extract_entity(user_q)
-    if ent:
-        return compose_person_answer(ent)
+    if ent and looks_like_person_name(ent):
+        # IMPORTANT: for person questions, scan ALL docs to avoid random wrong matches
+        docs_all = all_docs_from_vs(vs)
+        return compose_person_answer(ent, docs_all)
 
-    # Normal Q/A retrieval
-    docs = []
+    # Normal Q/A → embeddings top-k
     try:
-        hits = vs.similarity_search_with_score(user_q, k=10 if thinking else 6)
-        docs = [d for d, _s in hits]
+        hits = vs.similarity_search(user_q, k=8 if thinking else 4)
     except Exception:
-        docs = vs.similarity_search(user_q, k=10 if thinking else 6)
-
-    if not docs:
-        return "No relevant answer found."
+        hits = []
 
     answers = []
-    for d in docs:
+    for d in hits:
         a = (d.metadata.get("answer") or "").strip()
         if a and a not in answers:
             answers.append(a)
@@ -477,6 +493,11 @@ with tool_cols[3]:
         st.session_state.tool_mode = "Dubizzle"
 
 st.markdown(f"<div class='mode-title'>{st.session_state.tool_mode} Assistant</div>", unsafe_allow_html=True)
+
+# Quiet info so you know data exists
+st.caption(
+    f"Loaded Q&A: General {KB_COUNTS.get('General',0)} • Bayut {KB_COUNTS.get('Bayut',0)} • dubizzle {KB_COUNTS.get('Dubizzle',0)}"
+)
 
 # =====================================================
 # ANSWER MODE + REFRESH KNOWLEDGE
