@@ -9,12 +9,9 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_core.documents import Document
 
 # =====================================================
-# PAGE CONFIG
+# PAGE CONFIG (MUST BE FIRST STREAMLIT CALL)
 # =====================================================
-st.set_page_config(
-    page_title="Bayut & Dubizzle AI Content Assistant",
-    layout="wide"
-)
+st.set_page_config(page_title="Bayut & Dubizzle AI Content Assistant", layout="wide")
 
 # =====================================================
 # PATHS
@@ -23,66 +20,96 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 
 # =====================================================
-# UI STYLES (STABLE / NO BACKGROUND)
+# HARD-FORCE STYLES (VERY SPECIFIC + !important)
 # =====================================================
 st.markdown(
     """
     <style>
-      .center { text-align:center; }
-
+      /* Force container width */
       section.main > div.block-container{
         max-width: 980px !important;
         padding-top: 2rem !important;
         padding-bottom: 2rem !important;
       }
 
-      /* ----- OPTIONAL: hide Streamlit auto header spacer/odd small text (safe) ----- */
-      header { background: transparent !important; }
-      /* Some Streamlit builds render a tiny app label near the top; hide empty caption containers */
-      div[data-testid="stCaptionContainer"] { display: none !important; }
+      /* Hide Streamlit caption containers (the "Internal AI Assistant" you keep seeing) */
+      div[data-testid="stCaptionContainer"]{ display:none !important; }
+      div[data-testid="stHeader"]{ background: transparent !important; }
+      header{ background: transparent !important; }
 
-      /* QUESTION BUBBLES */
-      .q-bubble{
-        padding: 12px 16px;
-        border-radius: 16px;
-        max-width: 85%;
-        width: fit-content;
-        font-weight: 700;
-        margin: 12px 0 8px;
-        border: 1px solid rgba(0,0,0,0.08);
-        background: #ffffff;
+      /* Center ALL h1 inside the app (so even if Streamlit renders its own title, it becomes centered) */
+      section.main h1{
+        text-align:center !important;
+        margin-bottom: 6px !important;
       }
 
-      /* ANSWER BUBBLES (YOU ASKED: General gray / Bayut green / dubizzle red) */
-      .a-bubble{
-        padding: 12px 16px;
-        border-radius: 16px;
-        max-width: 92%;
-        width: fit-content;
-        margin: 6px 0 18px 6px;
-        line-height: 1.7;
-        border: 1px solid rgba(0,0,0,0.06);
-        white-space: pre-wrap;
+      /* Brand header block */
+      #brand-header{
+        text-align:center !important;
+        margin: 0 0 10px 0 !important;
       }
-      .a-general { background:#f2f2f2; }
-      .a-bayut { background:#e6f4ef; border-color: rgba(14,138,109,0.22); }
-      .a-dubizzle { background:#fdeaea; border-color: rgba(215,25,32,0.22); }
-
-      /* BUTTONS */
-      div.stButton > button {
-        border-radius: 12px;
-        font-weight: 600;
+      #brand-title{
+        font-size: 3rem !important;
+        font-weight: 800 !important;
+        margin: 0 !important;
+        line-height: 1.15 !important;
+      }
+      #brand-subtitle{
+        margin-top: 6px !important;
+        font-size: 1.05rem !important;
+        opacity: 0.75 !important;
       }
 
-      /* Custom label (since we collapse Streamlit label) */
+      /* Buttons */
+      div.stButton > button{
+        border-radius: 12px !important;
+        font-weight: 600 !important;
+      }
+
+      /* Custom label for input */
       .ask-label{
-        font-weight: 800;
-        margin: 8px 0 6px;
-        font-size: 1rem;
+        font-weight: 800 !important;
+        font-size: 1rem !important;
+        margin: 12px 0 6px 0 !important;
+      }
+
+      /* QUESTION bubble (same for all modes) */
+      .q-bubble{
+        padding: 12px 16px !important;
+        border-radius: 16px !important;
+        max-width: 85% !important;
+        width: fit-content !important;
+        font-weight: 700 !important;
+        margin: 12px 0 8px 0 !important;
+        border: 1px solid rgba(0,0,0,0.08) !important;
+        background: #ffffff !important;
+      }
+
+      /* ANSWER bubbles per mode */
+      .a-bubble{
+        padding: 12px 16px !important;
+        border-radius: 16px !important;
+        max-width: 92% !important;
+        width: fit-content !important;
+        margin: 6px 0 18px 6px !important;
+        line-height: 1.7 !important;
+        border: 1px solid rgba(0,0,0,0.06) !important;
+        white-space: normal !important;
+      }
+      .a-general{ background:#f2f2f2 !important; }
+      .a-bayut{ background:#e6f4ef !important; border-color: rgba(14,138,109,0.22) !important; }
+      .a-dubizzle{ background:#fdeaea !important; border-color: rgba(215,25,32,0.22) !important; }
+
+      /* Center the "Assistant" heading */
+      .mode-title{
+        text-align:center !important;
+        font-size: 1.8rem !important;
+        font-weight: 800 !important;
+        margin: 18px 0 10px 0 !important;
       }
     </style>
     """,
-    unsafe_allow_html=True
+    unsafe_allow_html=True,
 )
 
 # =====================================================
@@ -111,10 +138,7 @@ def read_text(fp: str) -> str:
         return f.read().decode("utf-8", errors="ignore")
 
 def parse_qa_pairs(text: str):
-    pattern = re.compile(
-        r"Q[:\-]\s*(.*?)\nA[:\-]\s*(.*?)(?=\nQ[:\-]|\Z)",
-        re.S | re.I
-    )
+    pattern = re.compile(r"Q[:\-]\s*(.*?)\nA[:\-]\s*(.*?)(?=\nQ[:\-]|\Z)", re.S | re.I)
     return [(q.strip(), a.strip()) for q, a in pattern.findall(text)]
 
 def format_thinking_answer(primary: str, extras: list[str]) -> str:
@@ -124,6 +148,10 @@ def format_thinking_answer(primary: str, extras: list[str]) -> str:
         if x and x not in cleaned:
             cleaned.append(x)
     return "\n\n".join(cleaned[:4])
+
+def br(s: str) -> str:
+    # safe HTML with line breaks
+    return html.escape(s).replace("\n", "<br>")
 
 # =====================================================
 # EMBEDDINGS
@@ -148,7 +176,8 @@ def build_stores():
             continue
 
         fp = os.path.join(DATA_DIR, f)
-        for q, a in parse_qa_pairs(read_text(fp)):
+        text = read_text(fp)
+        for q, a in parse_qa_pairs(text):
             doc = Document(page_content=q, metadata={"answer": a})
             stores["General"].append(doc)
             stores[bucket_from_filename(f)].append(doc)
@@ -165,26 +194,24 @@ def pick_store():
     return {
         "General": VS_ALL,
         "Bayut": VS_BAYUT,
-        "Dubizzle": VS_DUBIZZLE
+        "Dubizzle": VS_DUBIZZLE,
     }[st.session_state.tool_mode]
 
 # =====================================================
-# HEADER (CENTERED + BRAND COLORS)
+# HEADER (FORCED CENTER + BRAND COLORS)
 # =====================================================
 st.markdown(
     """
-    <div class="center">
-      <h1 style="margin-bottom:4px;">
+    <div id="brand-header">
+      <div id="brand-title">
         <span style="color:#0E8A6D;">Bayut</span> &
         <span style="color:#D71920;">dubizzle</span>
         AI Content Assistant
-      </h1>
-      <div style="font-size:1.05rem; opacity:0.75;">
-        Your Internal AI Assistant
       </div>
+      <div id="brand-subtitle">Your Internal AI Assistant</div>
     </div>
     """,
-    unsafe_allow_html=True
+    unsafe_allow_html=True,
 )
 
 # =====================================================
@@ -201,10 +228,7 @@ with tool_cols[3]:
     if st.button("dubizzle", use_container_width=True):
         st.session_state.tool_mode = "Dubizzle"
 
-st.markdown(
-    f"<h3 class='center' style='margin-top:14px;'>{st.session_state.tool_mode} Assistant</h3>",
-    unsafe_allow_html=True
-)
+st.markdown(f"<div class='mode-title'>{st.session_state.tool_mode} Assistant</div>", unsafe_allow_html=True)
 
 # =====================================================
 # ANSWER MODE BUTTONS (Ultra-Fast / Thinking)
@@ -217,7 +241,7 @@ with mode_cols[2]:
     if st.button("Thinking", use_container_width=True):
         st.session_state.answer_mode = "Thinking"
 
-st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
+st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
 
 # =====================================================
 # INPUT (FORCED LABEL: Ask me Anything in bold)
@@ -244,22 +268,21 @@ if ask and q:
         thinking = st.session_state.answer_mode == "Thinking"
         if thinking:
             with st.spinner("Thinking…"):
-                time.sleep(0.3)
+                time.sleep(0.25)
 
         results = vs.similarity_search(q, k=8 if thinking else 4)
-        answers = [r.metadata["answer"] for r in results if r.metadata.get("answer")]
+        answers = [r.metadata.get("answer") for r in results if r.metadata.get("answer")]
 
-        final = (
-            answers[0]
-            if not thinking
-            else format_thinking_answer(answers[0], answers[1:])
-        ) if answers else "No relevant answer found."
+        if not answers:
+            final = "No relevant answer found."
+        else:
+            final = answers[0] if not thinking else format_thinking_answer(answers[0], answers[1:])
 
     st.session_state.chat[st.session_state.tool_mode].append({"q": q, "a": final})
     st.rerun()
 
 # =====================================================
-# CHAT HISTORY
+# CHAT HISTORY (ANSWER bubble changes by mode: gray/green/red)
 # =====================================================
 answer_class = {
     "General": "a-general",
@@ -268,12 +291,6 @@ answer_class = {
 }[st.session_state.tool_mode]
 
 for item in reversed(st.session_state.chat[st.session_state.tool_mode]):
-    st.markdown(
-        f"<div class='q-bubble'>{html.escape(item['q'])}</div>",
-        unsafe_allow_html=True
-    )
-    st.markdown(
-        f"<div class='a-bubble {answer_class}'>{html.escape(item['a'])}</div>",
-        unsafe_allow_html=True
-    )
+    st.markdown(f"<div class='q-bubble'>{br(item['q'])}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='a-bubble {answer_class}'>{br(item['a'])}</div>", unsafe_allow_html=True)
     st.markdown("---")
