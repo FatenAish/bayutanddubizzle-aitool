@@ -36,37 +36,49 @@ st.markdown(
         padding-bottom: 2rem !important;
       }
 
+      /* ----- OPTIONAL: hide Streamlit auto header spacer/odd small text (safe) ----- */
+      header { background: transparent !important; }
+      /* Some Streamlit builds render a tiny app label near the top; hide empty caption containers */
+      div[data-testid="stCaptionContainer"] { display: none !important; }
+
       /* QUESTION BUBBLES */
       .q-bubble{
         padding: 12px 16px;
         border-radius: 16px;
         max-width: 85%;
         width: fit-content;
-        font-weight: 600;
-        margin: 12px 0 8px;
-        border: 1px solid rgba(0,0,0,0.06);
-      }
-
-      .q-general { background:#f2f2f2; }
-      .q-bayut { background:#e6f4ef; }
-      .q-dubizzle { background:#fdeaea; }
-
-      /* ANSWER */
-      .answer{
-        margin-left: 6px;
-        margin-bottom: 18px;
-        line-height: 1.7;
-      }
-
-      /* INPUT LABEL */
-      label[data-testid="stTextInputLabel"]{
         font-weight: 700;
+        margin: 12px 0 8px;
+        border: 1px solid rgba(0,0,0,0.08);
+        background: #ffffff;
       }
+
+      /* ANSWER BUBBLES (YOU ASKED: General gray / Bayut green / dubizzle red) */
+      .a-bubble{
+        padding: 12px 16px;
+        border-radius: 16px;
+        max-width: 92%;
+        width: fit-content;
+        margin: 6px 0 18px 6px;
+        line-height: 1.7;
+        border: 1px solid rgba(0,0,0,0.06);
+        white-space: pre-wrap;
+      }
+      .a-general { background:#f2f2f2; }
+      .a-bayut { background:#e6f4ef; border-color: rgba(14,138,109,0.22); }
+      .a-dubizzle { background:#fdeaea; border-color: rgba(215,25,32,0.22); }
 
       /* BUTTONS */
       div.stButton > button {
         border-radius: 12px;
         font-weight: 600;
+      }
+
+      /* Custom label (since we collapse Streamlit label) */
+      .ask-label{
+        font-weight: 800;
+        margin: 8px 0 6px;
+        font-size: 1rem;
       }
     </style>
     """,
@@ -83,10 +95,10 @@ st.session_state.setdefault("chat", {"General": [], "Bayut": [], "Dubizzle": []}
 # =====================================================
 # HELPERS
 # =====================================================
-def is_sop_file(name):
+def is_sop_file(name: str) -> bool:
     return "sop" in name.lower()
 
-def bucket_from_filename(name):
+def bucket_from_filename(name: str) -> str:
     n = name.lower()
     if "bayut" in n:
         return "Bayut"
@@ -94,18 +106,18 @@ def bucket_from_filename(name):
         return "Dubizzle"
     return "General"
 
-def read_text(fp):
+def read_text(fp: str) -> str:
     with open(fp, "rb") as f:
         return f.read().decode("utf-8", errors="ignore")
 
-def parse_qa_pairs(text):
+def parse_qa_pairs(text: str):
     pattern = re.compile(
         r"Q[:\-]\s*(.*?)\nA[:\-]\s*(.*?)(?=\nQ[:\-]|\Z)",
         re.S | re.I
     )
     return [(q.strip(), a.strip()) for q, a in pattern.findall(text)]
 
-def format_thinking_answer(primary, extras):
+def format_thinking_answer(primary: str, extras: list[str]) -> str:
     out = [primary] + extras
     cleaned = []
     for x in out:
@@ -118,9 +130,7 @@ def format_thinking_answer(primary, extras):
 # =====================================================
 @st.cache_resource
 def get_embeddings():
-    return HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-MiniLM-L6-v2"
-    )
+    return HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
 # =====================================================
 # BUILD STORES
@@ -159,18 +169,20 @@ def pick_store():
     }[st.session_state.tool_mode]
 
 # =====================================================
-# HEADER
+# HEADER (CENTERED + BRAND COLORS)
 # =====================================================
 st.markdown(
     """
-    <h1 class="center">
-      <span style="color:#0E8A6D;">Bayut</span> &
-      <span style="color:#D71920;">dubizzle</span> AI Content Assistant
-    </h1>
-
-    <p class="center" style="font-size:1.05rem; margin-top:-6px;">
-      Your Internal AI Assistant
-    </p>
+    <div class="center">
+      <h1 style="margin-bottom:4px;">
+        <span style="color:#0E8A6D;">Bayut</span> &
+        <span style="color:#D71920;">dubizzle</span>
+        AI Content Assistant
+      </h1>
+      <div style="font-size:1.05rem; opacity:0.75;">
+        Your Internal AI Assistant
+      </div>
+    </div>
     """,
     unsafe_allow_html=True
 )
@@ -186,11 +198,11 @@ with tool_cols[2]:
     if st.button("Bayut", use_container_width=True):
         st.session_state.tool_mode = "Bayut"
 with tool_cols[3]:
-    if st.button("Dubizzle", use_container_width=True):
+    if st.button("dubizzle", use_container_width=True):
         st.session_state.tool_mode = "Dubizzle"
 
 st.markdown(
-    f"<h3 class='center'>{st.session_state.tool_mode} Assistant</h3>",
+    f"<h3 class='center' style='margin-top:14px;'>{st.session_state.tool_mode} Assistant</h3>",
     unsafe_allow_html=True
 )
 
@@ -208,9 +220,10 @@ with mode_cols[2]:
 st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
 
 # =====================================================
-# INPUT
+# INPUT (FORCED LABEL: Ask me Anything in bold)
 # =====================================================
-q = st.text_input("Ask me Anything!")
+st.markdown("<div class='ask-label'>Ask me Anything</div>", unsafe_allow_html=True)
+q = st.text_input("", label_visibility="collapsed", key="q_input")
 
 btn_cols = st.columns([1, 1])
 ask = btn_cols[0].button("Ask", use_container_width=True)
@@ -248,19 +261,19 @@ if ask and q:
 # =====================================================
 # CHAT HISTORY
 # =====================================================
-bubble_class = {
-    "General": "q-general",
-    "Bayut": "q-bayut",
-    "Dubizzle": "q-dubizzle",
+answer_class = {
+    "General": "a-general",
+    "Bayut": "a-bayut",
+    "Dubizzle": "a-dubizzle",
 }[st.session_state.tool_mode]
 
 for item in reversed(st.session_state.chat[st.session_state.tool_mode]):
     st.markdown(
-        f"<div class='q-bubble {bubble_class}'>{html.escape(item['q'])}</div>",
+        f"<div class='q-bubble'>{html.escape(item['q'])}</div>",
         unsafe_allow_html=True
     )
     st.markdown(
-        f"<div class='answer'>{item['a']}</div>",
+        f"<div class='a-bubble {answer_class}'>{html.escape(item['a'])}</div>",
         unsafe_allow_html=True
     )
     st.markdown("---")
