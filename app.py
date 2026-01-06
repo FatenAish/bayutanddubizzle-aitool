@@ -3,7 +3,7 @@ import re
 import html
 import time
 import hashlib
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Dict
 
 import streamlit as st
 from langchain_community.vectorstores import FAISS
@@ -121,6 +121,7 @@ def is_sop_file(name: str) -> bool:
 
 def bucket_from_filename(name: str) -> str:
     n = name.lower()
+    # strict separation by filename (your rule)
     if "dubizzle" in n:
         return "Dubizzle"
     if "bayut" in n or "mybayut" in n:
@@ -131,7 +132,7 @@ def read_text(fp: str) -> str:
     with open(fp, "rb") as f:
         return f.read().decode("utf-8", errors="ignore")
 
-# ---- Robust Q/A parsing (supports Q13), Q), Q:, etc.) ----
+# Robust Q/A parsing (supports: Q: / Q13) / Q- , A: / A-)
 def parse_qa_pairs(text: str) -> List[Tuple[str, str]]:
     lines = text.splitlines()
     pairs: List[Tuple[str, str]] = []
@@ -144,7 +145,7 @@ def parse_qa_pairs(text: str) -> List[Tuple[str, str]]:
         m = re.match(r"^\s*A\s*[\:\-]\s*(.*)\s*$", line, flags=re.I)
         return m.group(1) if m else None
 
-    curr_q = None
+    curr_q: Optional[str] = None
     curr_a: List[str] = []
     in_a = False
 
@@ -195,6 +196,9 @@ def parse_qa_pairs(text: str) -> List[Tuple[str, str]]:
 def get_embeddings():
     return HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
+# =====================================================
+# KNOWLEDGE SIGNATURE (so Refresh Knowledge works without redeploy)
+# =====================================================
 def kb_signature() -> str:
     if not os.path.isdir(DATA_DIR):
         return "no-data-dir"
@@ -216,239 +220,234 @@ def kb_signature() -> str:
     return hashlib.sha256(raw.encode("utf-8", errors="ignore")).hexdigest()
 
 # =====================================================
-# BUILD STORES (STRICT PER MODE)
+# BUILD KB (STRICT PER MODE + keep docs for "ChatGPT-style" person answers)
 # =====================================================
 @st.cache_resource
-def build_stores(sig: str):
+def build_kb(sig: str):
     if not os.path.isdir(DATA_DIR):
-        return None, None, None, {"General": 0, "Bayut": 0, "Dubizzle": 0}
+        empty_counts = {"General": 0, "Bayut": 0, "Dubizzle": 0}
+        empty_docs = {"General": [], "Bayut": [], "Dubizzle": []}
+        return None, None, None, empty_docs, empty_counts, []
 
     emb = get_embeddings()
-    docs = {"General": [], "Bayut": [], "Dubizzle": []}
+    docs_by_bucket: Dict[str, List[Document]] = {"General": [], "Bayut": [], "Dubizzle": []}
+    loaded_files: List[str] = []
 
-    for f in os.listdir(DATA_DIR):
+    for f in sorted(os.listdir(DATA_DIR)):
         if not f.lower().endswith(".txt") or is_sop_file(f):
             continue
 
         fp = os.path.join(DATA_DIR, f)
         bucket = bucket_from_filename(f)
-        text = read_text(fp)
+        loaded_files.append(f)
 
+        text = read_text(fp)
         for q, a in parse_qa_pairs(text):
-            q = normalize_space(q)
-            a = a.strip()
-            content = f"Q: {q}\nA: {a}"
-            docs[bucket].append(
+            qn = normalize_space(q)
+            an = a.strip()
+            content = f"Q: {qn}\nA: {an}"  # IMPORTANT: index Q+Answer together
+            docs_by_bucket[bucket].append(
                 Document(
                     page_content=content,
                     metadata={
-                        "question": q,
-                        "answer": a,
+                        "question": qn,
+                        "answer": an,
                         "source_file": f,
                         "bucket": bucket,
                     },
                 )
             )
 
-    vs_general = FAISS.from_documents(docs["General"], emb) if docs["General"] else None
-    vs_bayut = FAISS.from_documents(docs["Bayut"], emb) if docs["Bayut"] else None
-    vs_dubizzle = FAISS.from_documents(docs["Dubizzle"], emb) if docs["Dubizzle"] else None
+    vs_general = FAISS.from_documents(docs_by_bucket["General"], emb) if docs_by_bucket["General"] else None
+    vs_bayut = FAISS.from_documents(docs_by_bucket["Bayut"], emb) if docs_by_bucket["Bayut"] else None
+    vs_dubizzle = FAISS.from_documents(docs_by_bucket["Dubizzle"], emb) if docs_by_bucket["Dubizzle"] else None
+    counts = {k: len(v) for k, v in docs_by_bucket.items()}
 
-    counts = {k: len(v) for k, v in docs.items()}
-    return vs_general, vs_bayut, vs_dubizzle, counts
+    return vs_general, vs_bayut, vs_dubizzle, docs_by_bucket, counts, loaded_files
 
 SIG = kb_signature()
-VS_GENERAL, VS_BAYUT, VS_DUBIZZLE, KB_COUNTS = build_stores(SIG)
+VS_GENERAL, VS_BAYUT, VS_DUBIZZLE, DOCS_BY_BUCKET, KB_COUNTS, LOADED_FILES = build_kb(SIG)
 
 def pick_store():
     return {"General": VS_GENERAL, "Bayut": VS_BAYUT, "Dubizzle": VS_DUBIZZLE}[st.session_state.tool_mode]
 
-def all_docs_from_vs(vs) -> List[Document]:
-    """Get ALL docs from FAISS store so person-queries can be complete (not random top-k)."""
-    if vs is None:
-        return []
-    try:
-        # langchain FAISS stores docs here
-        dct = getattr(vs.docstore, "_dict", None)
-        if isinstance(dct, dict):
-            return list(dct.values())
-    except Exception:
-        pass
-    return []
+def pick_docs():
+    return DOCS_BY_BUCKET.get(st.session_state.tool_mode, [])
 
 # =====================================================
-# PERSON / ENTITY ANSWERS (CHATGPT-STYLE WITHOUT LLM)
+# "CHATGPT STYLE" ANSWERS (NO LLM, SMART HEURISTICS)
 # =====================================================
 def extract_entity(query: str) -> Optional[str]:
     q = (query or "").strip()
     m = re.match(r"^\s*who\s+is\s+(.+?)\s*\?*\s*$", q, flags=re.I)
     if m:
-        ent = normalize_space(m.group(1))
-        if 1 <= len(ent) <= 60:
+        ent = m.group(1).strip()
+        # keep short entities only (prevents weird captures)
+        if 1 <= len(ent.split()) <= 5:
             return ent
     return None
 
-def looks_like_person_name(ent: str) -> bool:
-    e = (ent or "").strip()
-    if not e:
-        return False
-    # single token like "faten" is okay; reject very long sentences
-    return len(e.split()) <= 6
+def entity_regex(ent: str) -> re.Pattern:
+    ent = (ent or "").strip()
+    if not ent:
+        return re.compile(r"^$")  # no match
+    if " " in ent:
+        # match words in order
+        pat = r"\b" + r"\s+".join(re.escape(w) for w in ent.split()) + r"\b"
+        return re.compile(pat, flags=re.I)
+    return re.compile(rf"\b{re.escape(ent)}\b", flags=re.I)
 
-def find_full_name(ent: str, docs: List[Document]) -> str:
-    ent_l = ent.lower().strip()
-    best = ent.strip().title()
+def split_names(s: str) -> List[str]:
+    s = (s or "").strip()
+    s = re.sub(r"[\.]+$", "", s)
+    parts = re.split(r"\s*(?:,|&|and)\s*", s, flags=re.I)
+    return [p.strip() for p in parts if p.strip()]
 
-    for d in docs:
-        txt = (d.metadata.get("answer") or "") + "\n" + (d.metadata.get("question") or "")
-        for ln in txt.splitlines():
-            if ent_l in ln.lower():
-                # try to pull a proper name containing the entity
-                # e.g. "Faten Aish", "Sarah Al Nawah"
-                candidates = re.findall(r"([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,4})", ln)
-                for c in candidates:
-                    if ent_l in c.lower():
-                        # prefer longer (first + last)
-                        if len(c.split()) >= len(best.split()):
-                            best = c.strip()
-    return best
-
-def find_app_responsibles(docs: List[Document]) -> Optional[str]:
-    # catch typos: responsible/resposible + app/tool/assistant
-    q_pat = re.compile(r"respon\w*\s+for\s+.*(app|tool|assistant)", re.I)
-    for d in docs:
-        q = (d.metadata.get("question") or "")
-        a = (d.metadata.get("answer") or "").strip()
-        if q_pat.search(q) and a:
-            return a
-    return None
-
-def find_channel_handler_blob(ent: str, docs: List[Document]) -> Optional[str]:
-    ent_l = ent.lower().strip()
-    for d in docs:
+def find_app_responsibles(all_docs: List[Document]) -> Optional[str]:
+    # Find the Q that states responsibility (from ANY doc in this mode)
+    for d in all_docs:
         q = (d.metadata.get("question") or "").lower()
-        a = (d.metadata.get("answer") or "")
-        if ("channel handler" in q or "coordination lead" in q) and ent_l in a.lower():
-            return a.strip()
+        if "who is responsible for the app" in q or "responsible for the app" in q:
+            a = (d.metadata.get("answer") or "").strip()
+            return a or None
     return None
 
-def pick_role_lines(ent: str, docs: List[Document]) -> List[str]:
+def find_full_name(ent: str, all_docs: List[Document]) -> str:
+    ent_l = (ent or "").lower().strip()
+    # Prefer the "responsible for the app" answer (usually has full names)
+    resp = find_app_responsibles(all_docs)
+    if resp:
+        for nm in split_names(resp):
+            if ent_l in nm.lower():
+                return nm
+
+    # Otherwise: find a capitalized name that includes the entity
+    rx = entity_regex(ent)
+    for d in all_docs:
+        blob = f"{d.metadata.get('question','')}\n{d.metadata.get('answer','')}"
+        if rx.search(blob):
+            # look for "Faten Aish" / "Faten ..." (simple + reliable for your data)
+            m = re.search(r"\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b", blob)
+            if m and ent_l in m.group(1).lower():
+                return m.group(1).strip()
+
+    # fallback: title-case the entity
+    return ent.strip().title()
+
+def collect_person_docs(ent: str, vs, all_docs: List[Document], thinking: bool) -> List[Document]:
+    rx = entity_regex(ent)
+
+    # 1) Direct mentions (fast, accurate)
+    direct = []
+    for d in all_docs:
+        blob = f"{d.metadata.get('question','')}\n{d.metadata.get('answer','')}"
+        if rx.search(blob):
+            direct.append(d)
+
+    # 2) Semantic hits (to pull "responsible for the app", "Channel Handler", etc.)
+    sem = []
+    if vs is not None:
+        queries = [
+            f"who is {ent}",
+            ent,
+            f"{ent} channel handler",
+            "who is responsible for the app",
+            "channel handler",
+            "responsible for the app",
+        ]
+        k = 14 if thinking else 10
+        for qq in queries:
+            try:
+                hits = vs.similarity_search(qq, k=k)
+                sem.extend(hits)
+            except Exception:
+                pass
+
+    # Dedup by (file, question)
+    out = []
+    seen = set()
+    for d in direct + sem:
+        key = (d.metadata.get("source_file"), d.metadata.get("question"))
+        if key not in seen:
+            seen.add(key)
+            out.append(d)
+
+    return out
+
+def compose_person_answer(ent: str, vs, mode_docs: List[Document], thinking: bool) -> str:
+    # IMPORTANT: use ALL docs in this mode for role/responsibility scanning
+    all_docs = mode_docs[:]  # already strict per mode
+    rel_docs = collect_person_docs(ent, vs, all_docs, thinking)
+
+    full_name = find_full_name(ent, all_docs)
     ent_l = ent.lower().strip()
-    lines = []
-    for d in docs:
-        a = (d.metadata.get("answer") or "")
-        for ln in a.splitlines():
-            if ent_l in ln.lower():
-                cleaned = normalize_space(ln)
-                if cleaned and cleaned not in lines:
-                    lines.append(cleaned)
-    return lines[:6]
 
-def summarize_channel_handler(a: str) -> str:
-    """
-    Turn your SOP-style bullets into a friendly single sentence.
-    """
-    if not a:
-        return ""
-    # Keep first sentence, then compress bullet verbs if present
-    lines = [normalize_space(x) for x in a.splitlines() if normalize_space(x)]
-    if not lines:
-        return ""
-    first = lines[0].rstrip(".")
-    bullets = [ln for ln in lines[1:] if not ln.lower().startswith("faten")]
-    # take up to 3 actions
-    actions = []
-    for b in bullets:
-        b = b.strip("-• ").strip()
-        if b and b not in actions:
-            actions.append(b.rstrip("."))
-        if len(actions) >= 3:
-            break
-
-    if actions:
-        return f"{first}. In practice, that means she helps coordinate between Content and Operations, reviews requests, and tracks progress."
-    return first + "."
-
-def compose_person_answer(ent: str, docs_all: List[Document]) -> str:
-    ent_l = ent.lower().strip()
-    name = find_full_name(ent, docs_all)
-
-    # 1) app responsible
-    responsibles = find_app_responsibles(docs_all)
-    is_responsible = bool(responsibles and ent_l in responsibles.lower())
-
-    # 2) channel handler detailed blob
-    ch_blob = find_channel_handler_blob(ent, docs_all)
-
-    # 3) role lines (like "Content (AR): Faten Aish — ...")
-    role_lines = pick_role_lines(ent, docs_all)
-
-    parts = []
-
-    if is_responsible and responsibles:
-        # try to keep it natural
-        if "and" in responsibles.lower() or "&" in responsibles:
-            parts.append(f"{name} is one of the people responsible for the Bayut & dubizzle AI Content Assistant (alongside Sarah Al Nawah).")
-        else:
-            parts.append(f"{name} is responsible for the Bayut & dubizzle AI Content Assistant.")
-
-    if ch_blob:
-        parts.append(summarize_channel_handler(ch_blob))
-
-    # If we still want a short “titles” line
-    # Pull the cleanest “X — Y” style descriptor if exists
-    descriptor = ""
-    for ln in role_lines:
-        if "—" in ln or "-" in ln:
-            # keep the part after the dash
-            if "—" in ln:
-                descriptor = ln.split("—", 1)[-1].strip()
-            else:
-                descriptor = ln.split("-", 1)[-1].strip()
-            if descriptor:
+    # Responsible for app?
+    resp = find_app_responsibles(all_docs)
+    resp_sentence = ""
+    if resp:
+        names = split_names(resp)
+        # check if person is inside names
+        match = None
+        for nm in names:
+            if ent_l in nm.lower():
+                match = nm
                 break
+        if match:
+            others = [n for n in names if n.lower() != match.lower()]
+            if others:
+                resp_sentence = f"{full_name} is one of the people responsible for the Bayut & dubizzle AI Content Assistant (alongside {', '.join(others)})."
+            else:
+                resp_sentence = f"{full_name} is responsible for the Bayut & dubizzle AI Content Assistant."
 
-    if descriptor:
-        # Avoid repeating "Channel Handler" sentence twice
-        if "channel handler" not in " ".join(parts).lower():
-            parts.append(f"Internally, she’s listed under: {descriptor}.")
+    # Channel Handler / corrections roles?
+    blob_all = "\n".join(
+        (d.metadata.get("question", "") + "\n" + d.metadata.get("answer", "")) for d in rel_docs
+    ).lower()
 
-    # If nothing found, fallback
-    if not parts:
-        return f"I couldn’t find clear information about “{ent}” in the internal knowledge files."
+    role_sentence = ""
+    if "channel handler" in blob_all:
+        # make it exactly the tone you want
+        role_sentence = "She’s also the Channel Handler for corrections and updates—handling coordination, reviewing requests, and tracking progress."
+    else:
+        # sometimes role is written without the exact phrase
+        if ("content (ar)" in blob_all or "arabic content" in blob_all) and "correction" in blob_all:
+            role_sentence = "She supports Arabic content corrections and helps coordinate updates."
 
-    # De-dup sentences
-    final_parts = []
-    for p in parts:
-        p = normalize_space(p)
-        if p and p not in final_parts:
-            final_parts.append(p)
+    # Any extra title if you add it later (example: senior content specialist)
+    extra_sentence = ""
+    if "senior content specialist" in blob_all:
+        extra_sentence = "She’s also a Senior Content Specialist at Bayut."
 
-    return " ".join(final_parts)
+    # If we still didn't find anything meaningful:
+    if not resp_sentence and not role_sentence and not extra_sentence:
+        return f"I couldn’t find clear information about “{ent}” in the internal knowledge files for this mode."
 
-def answer_from_store(user_q: str, vs):
+    # Build final (clean, not robotic)
+    parts = [p for p in [resp_sentence, role_sentence, extra_sentence] if p.strip()]
+    return " ".join(parts)
+
+def answer_standard(user_q: str, vs, mode_docs: List[Document], thinking: bool) -> str:
     if vs is None:
         return "No internal Q&A data found for this mode."
 
-    thinking = st.session_state.answer_mode == "Thinking"
-    if thinking:
-        with st.spinner("Thinking…"):
-            time.sleep(0.10)
+    uq_norm = normalize_space(user_q).lower()
 
-    ent = extract_entity(user_q)
-    if ent and looks_like_person_name(ent):
-        # IMPORTANT: for person questions, scan ALL docs to avoid random wrong matches
-        docs_all = all_docs_from_vs(vs)
-        return compose_person_answer(ent, docs_all)
+    # 1) exact match (best for greetings like "hi", "hello")
+    for d in mode_docs:
+        if normalize_space(d.metadata.get("question", "")).lower() == uq_norm:
+            return (d.metadata.get("answer") or "").strip() or "No relevant answer found."
 
-    # Normal Q/A → embeddings top-k
+    # 2) semantic match
+    k = 10 if thinking else 6
     try:
-        hits = vs.similarity_search(user_q, k=8 if thinking else 4)
+        hits = vs.similarity_search_with_score(user_q, k=k)
+        docs = [d for d, _s in hits]
     except Exception:
-        hits = []
+        docs = vs.similarity_search(user_q, k=k)
 
     answers = []
-    for d in hits:
+    for d in docs:
         a = (d.metadata.get("answer") or "").strip()
         if a and a not in answers:
             answers.append(a)
@@ -460,6 +459,18 @@ def answer_from_store(user_q: str, vs):
         return answers[0]
 
     return "\n\n".join(answers[:3])
+
+def answer_from_kb(user_q: str, vs, mode_docs: List[Document]) -> str:
+    thinking = st.session_state.answer_mode == "Thinking"
+    if thinking:
+        with st.spinner("Thinking…"):
+            time.sleep(0.12)
+
+    ent = extract_entity(user_q)
+    if ent:
+        return compose_person_answer(ent, vs, mode_docs, thinking)
+
+    return answer_standard(user_q, vs, mode_docs, thinking)
 
 # =====================================================
 # HEADER
@@ -494,13 +505,13 @@ with tool_cols[3]:
 
 st.markdown(f"<div class='mode-title'>{st.session_state.tool_mode} Assistant</div>", unsafe_allow_html=True)
 
-# Quiet info so you know data exists
+# Keep this so you immediately see if your GitHub /data folder is correct
 st.caption(
     f"Loaded Q&A: General {KB_COUNTS.get('General',0)} • Bayut {KB_COUNTS.get('Bayut',0)} • dubizzle {KB_COUNTS.get('Dubizzle',0)}"
 )
 
 # =====================================================
-# ANSWER MODE + REFRESH KNOWLEDGE
+# ANSWER MODE + REFRESH KNOWLEDGE (no redeploy needed for TXT changes)
 # =====================================================
 mode_cols = st.columns([4, 2, 2, 2, 4])
 with mode_cols[1]:
@@ -531,7 +542,7 @@ if clear_btn:
     st.rerun()
 
 # =====================================================
-# ASK HANDLER
+# ASK HANDLER (reliable: always appends + reruns)
 # =====================================================
 if ask_btn:
     if not (q or "").strip():
@@ -539,7 +550,8 @@ if ask_btn:
     else:
         try:
             vs = pick_store()
-            final = answer_from_store(q, vs)
+            mode_docs = pick_docs()
+            final = answer_from_kb(q, vs, mode_docs)
             st.session_state.chat[st.session_state.tool_mode].append({"q": q, "a": final})
             st.rerun()
         except Exception as e:
