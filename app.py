@@ -428,8 +428,179 @@ if clear:
     st.rerun()
 
 # =====================================================
-# ANSWER LOGIC (CHATGPT-STYLE: extract the relevant fact, not a random block)
+# ANSWER LOGIC (CHATGPT-STYLE WITHOUT LLM)
 # =====================================================
+
+def _clean(a: str) -> str:
+    a = (a or "").strip()
+    a = re.sub(r"\n{3,}", "\n\n", a)
+    return a
+
+def _split_lines(text: str) -> list[str]:
+    lines = []
+    for ln in (text or "").splitlines():
+        ln = ln.strip()
+        if ln:
+            lines.append(ln)
+    return lines
+
+def _title_case_name(name: str) -> str:
+    # keep acronyms and Arabic as-is
+    if re.search(r"[\u0600-\u06FF]", name):
+        return name
+    return " ".join([w.capitalize() if w.islower() else w for w in name.split()])
+
+def _extract_entity(query: str) -> str | None:
+    q = (query or "").strip()
+    m = re.match(r"^\s*who\s+is\s+(.+?)\s*\?*\s*$", q, flags=re.I)
+    if m:
+        ent = m.group(1).strip()
+        # keep short entities only
+        if 1 <= len(ent.split()) <= 5:
+            return ent
+    # Arabic "من هو/من هي"
+    m2 = re.match(r"^\s*(من هو|من هي)\s+(.+?)\s*$", q, flags=re.I)
+    if m2:
+        ent = m2.group(2).strip()
+        if 1 <= len(ent.split()) <= 5:
+            return ent
+    return None
+
+def _collect_entity_facts(entity: str, docs: list[Document], thinking: bool) -> dict:
+    """
+    Pull ONLY the useful facts about the entity from different answers,
+    then we will write a nice response.
+    """
+    ent_l = entity.lower().strip()
+    facts = {
+        "canonical_name": None,
+        "responsible_with": None,     # list of names
+        "roles": [],                 # key roles lines
+        "extra": [],                 # other lines mentioning entity
+    }
+
+    role_keywords = [
+        "responsible", "owner", "managed",
+        "channel handler", "coordination",
+        "lead", "specialist", "manager",
+        "content", "operations"
+    ]
+
+    for d in docs:
+        ans = _clean(d.metadata.get("answer", ""))
+
+        # Grab lines that mention the entity
+        lines = _split_lines(ans)
+        hit_lines = [ln for ln in lines if ent_l in ln.lower()]
+
+        # If entity appears, set canonical name if we can
+        if hit_lines and not facts["canonical_name"]:
+            # try to capture "Faten Aish" style from the line
+            # fallback to entity itself
+            facts["canonical_name"] = hit_lines[0]
+            # better: extract first two words that look like a name
+            m = re.search(r"([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})", hit_lines[0])
+            if m:
+                facts["canonical_name"] = m.group(1).strip()
+
+        # RESPONSIBLE pattern: "X and Y"
+        if "responsible for the app" in (d.metadata.get("question", "").lower()):
+            # Answer likely is "Faten Aish and Sarah Al Nawah."
+            names = [n.strip().strip(".") for n in re.split(r"\band\b|&|،", ans, flags=re.I) if n.strip()]
+            if names:
+                facts["responsible_with"] = names
+
+        # Roles: pick lines mentioning entity that also contain role keywords
+        for ln in hit_lines:
+            ln_l = ln.lower()
+            if any(k in ln_l for k in role_keywords):
+                if ln not in facts["roles"]:
+                    facts["roles"].append(ln)
+            else:
+                if ln not in facts["extra"]:
+                    facts["extra"].append(ln)
+
+    # Trim
+    max_roles = 4 if thinking else 2
+    max_extra = 4 if thinking else 1
+    facts["roles"] = facts["roles"][:max_roles]
+    facts["extra"] = facts["extra"][:max_extra]
+    return facts
+
+def _render_entity_answer(entity: str, facts: dict) -> str:
+    """
+    Write a friendly, natural response (ChatGPT-ish) from the extracted facts.
+    """
+    name = facts.get("canonical_name") or _title_case_name(entity)
+
+    parts = []
+
+    # Responsible for the app
+    rw = facts.get("responsible_with")
+    if rw:
+        # If entity is one of them, phrase nicely
+        if any(entity.lower() in n.lower() for n in rw):
+            # Show both names cleanly
+            if len(rw) >= 2:
+                parts.append(f"{rw[0]} is one of the people responsible for this app, together with {rw[1]}.")
+            else:
+                parts.append(f"{rw[0]} is responsible for this app.")
+        else:
+            # still useful info
+            if len(rw) >= 2:
+                parts.append(f"This app is managed by {rw[0]} and {rw[1]}.")
+
+    # Roles (Channel Handler etc.)
+    roles = facts.get("roles") or []
+    if roles:
+        # Convert role lines into nice sentences (light cleanup)
+        role_sentences = []
+        for r in roles:
+            rr = r.strip().rstrip(".")
+            rr = rr.replace("—", "-")
+            # common line: "Faten Aish is the Channel Handler. They:"
+            rr = rr.replace("They:", "").strip()
+            # If line is "Content (AR): Faten Aish — Arabic Content Corrections / Channel Handler"
+            if "content (ar)" in rr.lower():
+                role_sentences.append(f"She also acts as the Channel Handler for Arabic content corrections.")
+            elif "channel handler" in rr.lower():
+                role_sentences.append(f"She also acts as the Channel Handler for this workflow.")
+            else:
+                # keep as supporting fact
+                role_sentences.append(rr)
+
+        # Dedup and add
+        cleaned = []
+        for s in role_sentences:
+            s = s.strip()
+            if s and s not in cleaned:
+                cleaned.append(s)
+        parts.extend(cleaned[:2])
+
+    # Extra facts (if any)
+    extra = facts.get("extra") or []
+    # only add extras if they add value
+    useful_extra = []
+    for e in extra:
+        e = e.strip().rstrip(".")
+        if e and e not in useful_extra and "content (ar)" not in e.lower():
+            useful_extra.append(e)
+
+    if useful_extra:
+        # Keep it simple — one extra line
+        parts.append(useful_extra[0] + ".")
+
+    # If we still have nothing, fallback
+    if not parts:
+        return f"I found mentions of {name} in the knowledge files, but not enough to give a clear profile. Try asking with more context (team/process)."
+
+    # Make it read well
+    out = " ".join(parts)
+
+    # Replace repeated "She" if entity isn't clearly female/unknown
+    # (skip – you can keep it as-is if your team knows the person)
+    return out
+
 def answer_from_store(user_q: str, vs):
     if vs is None:
         return "No internal Q&A data found for this mode."
@@ -437,62 +608,65 @@ def answer_from_store(user_q: str, vs):
     thinking = st.session_state.answer_mode == "Thinking"
     if thinking:
         with st.spinner("Thinking…"):
-            time.sleep(0.15)
+            time.sleep(0.12)
 
-    # use scores so we can filter weak matches
-    results = vs.similarity_search_with_score(user_q, k=10 if thinking else 6)
+    # Fetch candidates using both the full question and (if entity query) the entity alone
+    ent = _extract_entity(user_q)
 
-    if not results:
+    hits = []
+    try:
+        hits.extend(vs.similarity_search_with_score(user_q, k=12 if thinking else 8))
+        if ent:
+            hits.extend(vs.similarity_search_with_score(ent, k=12 if thinking else 8))
+    except Exception:
+        # fallback if score search isn't available
+        docs = vs.similarity_search(user_q, k=12 if thinking else 8)
+        hits.extend([(d, 1.0) for d in docs])
+        if ent:
+            docs2 = vs.similarity_search(ent, k=12 if thinking else 8)
+            hits.extend([(d, 1.0) for d in docs2])
+
+    if not hits:
         return "No relevant answer found."
 
-    # optional: filter weak matches (tune if needed)
-    # NOTE: FAISS score meaning depends on distance; keep it permissive.
-    docs_sorted = [d for (d, _s) in results]
+    # Dedup docs while preserving order
+    seen = set()
+    docs_sorted = []
+    for d, _s in hits:
+        key = (d.metadata.get("source_file"), d.metadata.get("question"))
+        if key not in seen:
+            seen.add(key)
+            docs_sorted.append(d)
 
-    # Entity-style questions: "who is X"
-    ent = extract_entity(user_q)
+    # ENTITY MODE: "who is X" → compose profile answer from multiple facts
     if ent:
-        facts = []
-        for d in docs_sorted:
-            ans = d.metadata.get("answer", "")
-            hits = extract_lines_with_term(ans, ent, max_lines=2)
-            facts.extend(hits)
+        facts = _collect_entity_facts(ent, docs_sorted, thinking=thinking)
+        return _render_entity_answer(ent, facts)
 
-        # If we found entity facts, return them cleanly (dedup)
-        if facts:
-            out = []
-            for f in facts:
-                if f not in out:
-                    out.append(f)
-            return "\n".join(out[:4])
-
-        # fallback: if no direct entity line, return best normal answer
-        best = docs_sorted[0].metadata.get("answer", "").strip()
-        return best or "No relevant answer found."
-
-    # Normal Q&A: return top answer, and in Thinking mode add a couple supporting ones
-    answers = [d.metadata.get("answer", "").strip() for d in docs_sorted]
-    answers = [a for a in answers if a]
+    # NORMAL MODE: return top answer but make it nicer (avoid massive blocks)
+    answers = [(_clean(d.metadata.get("answer", "")), d) for d in docs_sorted]
+    answers = [(a, d) for a, d in answers if a]
 
     if not answers:
         return "No relevant answer found."
 
-    if not thinking:
-        return answers[0]
+    top = answers[0][0]
 
-    return format_thinking_answer(answers[0], answers[1:])
+    # If the answer is very long, show only the most useful part
+    if len(top) > 600 and st.session_state.answer_mode != "Thinking":
+        # keep first 2 paragraphs
+        paras = [p.strip() for p in top.split("\n\n") if p.strip()]
+        top = "\n\n".join(paras[:2])
 
+    if st.session_state.answer_mode != "Thinking":
+        return top
+
+    # Thinking mode: show up to 3 distinct helpful answers
+    extras = [a for a, _d in answers[1:]]
+    return format_thinking_answer(top, extras)
+
+# ---- Run answer ----
 if ask and q:
     final = answer_from_store(q, pick_store())
     st.session_state.chat[st.session_state.tool_mode].append({"q": q, "a": final})
     st.rerun()
-
-# =====================================================
-# CHAT HISTORY
-# =====================================================
-answer_class = {"General": "a-general", "Bayut": "a-bayut", "Dubizzle": "a-dubizzle"}[st.session_state.tool_mode]
-
-for item in reversed(st.session_state.chat[st.session_state.tool_mode]):
-    st.markdown(f"<div class='q-bubble'>{br(item['q'])}</div>", unsafe_allow_html=True)
-    st.markdown(f"<div class='a-bubble {answer_class}'>{br(item['a'])}</div>", unsafe_allow_html=True)
-    st.markdown("---")
