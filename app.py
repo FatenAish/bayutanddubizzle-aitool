@@ -18,10 +18,10 @@ st.set_page_config(page_title="Bayut & Dubizzle AI Content Assistant", layout="w
 # PATHS
 # =====================================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "data")
+DATA_DIR = os.path.join(BASE_DIR, "data")  # put your .txt here in the repo
 
 # =====================================================
-# HARD-FORCE STYLES (VERY SPECIFIC + !important)
+# STYLES (KEEP YOUR DESIGN)
 # =====================================================
 st.markdown(
     """
@@ -35,11 +35,6 @@ st.markdown(
       div[data-testid="stCaptionContainer"]{ display:none !important; }
       div[data-testid="stHeader"]{ background: transparent !important; }
       header{ background: transparent !important; }
-
-      section.main h1{
-        text-align:center !important;
-        margin-bottom: 6px !important;
-      }
 
       #brand-header{ text-align:center !important; margin: 0 0 10px 0 !important; }
       #brand-title{
@@ -112,18 +107,43 @@ st.session_state.setdefault("chat", {"General": [], "Bayut": [], "Dubizzle": []}
 # HELPERS
 # =====================================================
 def normalize(text: str) -> str:
-    return re.sub(r"\s+", " ", (text or "").lower().strip())
+    return re.sub(r"\s+", " ", (text or "").strip().lower())
+
+def br(s: str) -> str:
+    return html.escape(s or "").replace("\n", "<br>")
 
 def is_sop_file(name: str) -> bool:
-    # keep your rule (anything with "sop" is excluded)
+    # Anything with SOP in filename is excluded
     return "sop" in name.lower()
 
 def bucket_from_filename(name: str) -> str:
+    """
+    Your rule:
+    - General mode answers only from General QA files
+    - Bayut mode answers only from Bayut/MyBayut files
+    - dubizzle mode answers only from dubizzle files
+    """
     n = name.lower()
-    if "bayut" in n:
+
+    # MyBayut is Bayut content
+    if "mybayut" in n:
         return "Bayut"
-    if "dubizzle" in n:
+
+    has_bayut = "bayut" in n
+    has_dub = "dubizzle" in n
+
+    # cross-brand or general
+    if has_bayut and has_dub:
+        return "General"
+    if any(x in n for x in ["general", "both", "common", "shared", "cross"]):
+        return "General"
+
+    if has_bayut:
+        return "Bayut"
+    if has_dub:
         return "Dubizzle"
+
+    # default safe
     return "General"
 
 def read_text(fp: str) -> str:
@@ -131,66 +151,34 @@ def read_text(fp: str) -> str:
         return f.read().decode("utf-8", errors="ignore")
 
 def parse_qa_pairs(text: str):
-    pattern = re.compile(
-        r"Q[:\-]\s*(.*?)\nA[:\-]\s*(.*?)(?=\nQ[:\-]|\Z)",
-        re.S | re.I
-    )
+    pattern = re.compile(r"Q[:\-]\s*(.*?)\nA[:\-]\s*(.*?)(?=\nQ[:\-]|\Z)", re.S | re.I)
     return [(q.strip(), a.strip()) for q, a in pattern.findall(text)]
 
-def format_thinking_answer(primary: str, extras: list[str]) -> str:
-    out = [primary] + extras
-    cleaned = []
-    for x in out:
+def merge_unique(items: list[str], limit: int = 6) -> str:
+    out = []
+    for x in items:
         x = (x or "").strip()
-        if x and x not in cleaned:
-            cleaned.append(x)
-    return "\n\n".join(cleaned[:4])
-
-def br(s: str) -> str:
-    return html.escape(s or "").replace("\n", "<br>")
-
-# =====================================================
-# CHATGPT-STYLE LOGIC
-# =====================================================
-GREETINGS = {
-    "hi", "hello", "hey",
-    "good morning", "good afternoon", "good evening",
-    "السلام عليكم"
-}
-
-def is_greeting(q: str) -> bool:
-    return normalize(q) in GREETINGS
+        if x and x not in out:
+            out.append(x)
+    return "\n\n".join(out[:limit])
 
 def is_entity_question(q: str) -> bool:
     qn = normalize(q)
-    return qn.startswith(("who is", "what is", "who are", "من هو", "من هي", "ما هو", "ما هي"))
+    return qn.startswith(("who is", "what is", "من هو", "من هي", "ما هو", "ما هي"))
 
 def extract_entity(q: str) -> str:
     qn = normalize(q)
-    qn = re.sub(r"^(who is|what is|who are)\s+", "", qn).strip()
+    qn = re.sub(r"^(who is|what is)\s+", "", qn).strip()
     qn = re.sub(r"^(من هو|من هي|ما هو|ما هي)\s+", "", qn).strip()
     qn = re.sub(r"[?!.]+$", "", qn).strip()
     return qn
 
-def word_hit(text: str, token: str) -> bool:
-    # word boundary-ish check (safe for first-name queries like "faten")
+def token_in_text(text: str, token: str) -> bool:
     t = normalize(text)
     tok = normalize(token)
     if not tok:
         return False
     return re.search(rf"(^|[^a-z0-9_]){re.escape(tok)}([^a-z0-9_]|$)", t) is not None
-
-def merge_unique(facts: list[str]) -> str:
-    uniq = []
-    for f in facts:
-        f = (f or "").strip()
-        if f and f not in uniq:
-            uniq.append(f)
-    if not uniq:
-        return ""
-    if len(uniq) == 1:
-        return uniq[0]
-    return " ".join(uniq)
 
 # =====================================================
 # EMBEDDINGS
@@ -200,14 +188,12 @@ def get_embeddings():
     return HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
 # =====================================================
-# DATA FINGERPRINT (AUTO-REFRESH WHEN TXT CONTENT CHANGES)
+# AUTO REFRESH WHEN DATA FILES CHANGE (NO REDEPLOY NEEDED)
 # =====================================================
-def file_md5(path: str) -> str:
-    h = hashlib.md5()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(1024 * 1024), b""):
-            h.update(chunk)
-    return h.hexdigest()
+def file_sig(path: str) -> str:
+    # fast signature: mtime + size (enough to trigger rebuild)
+    st_ = os.stat(path)
+    return f"{int(st_.st_mtime)}:{st_.st_size}"
 
 def data_fingerprint():
     if not os.path.isdir(DATA_DIR):
@@ -218,57 +204,51 @@ def data_fingerprint():
             continue
         fp = os.path.join(DATA_DIR, f)
         try:
-            items.append((f, file_md5(fp)))
+            items.append((f, file_sig(fp)))
         except Exception:
-            continue
+            pass
     return tuple(sorted(items))
 
 # =====================================================
-# BUILD STORES (IMPORTANT FIX)
-# - Embed Q + A together (better retrieval)
-# - Exact question map first (prevents random wrong answers)
-# - Keep docs list for fallback scanning
+# BUILD STORES (STRICT MODE + EMBED Q+A)
 # =====================================================
 @st.cache_resource
 def build_assets(_fingerprint):
     if not os.path.isdir(DATA_DIR):
-        return None
+        return {"vs": {"General": None, "Bayut": None, "Dubizzle": None}, "docs": {"General": [], "Bayut": [], "Dubizzle": []}}
 
     emb = get_embeddings()
+    docs = {"General": [], "Bayut": [], "Dubizzle": []}
 
-    docs_by_mode = {"General": [], "Bayut": [], "Dubizzle": []}
-    qmap_by_mode = {"General": {}, "Bayut": {}, "Dubizzle": {}}
-
+    seen = set()  # dedupe duplicates
     for f in os.listdir(DATA_DIR):
         if not f.lower().endswith(".txt") or is_sop_file(f):
             continue
 
+        mode = bucket_from_filename(f)
         fp = os.path.join(DATA_DIR, f)
-        bucket = bucket_from_filename(f)
+        text = read_text(fp)
 
-        for q, a in parse_qa_pairs(read_text(fp)):
-            nq = normalize(q)
-            if nq:
-                qmap_by_mode["General"][nq] = a
-                qmap_by_mode[bucket][nq] = a
+        for q, a in parse_qa_pairs(text):
+            key = (mode, normalize(q), normalize(a))
+            if key in seen:
+                continue
+            seen.add(key)
 
-            # 🔥 KEY CHANGE: embed Q + A, not Q only
+            # IMPORTANT: embed BOTH Q + A so "who is faten" can match answers that contain "Faten"
             content = f"Q: {q}\nA: {a}"
-            doc = Document(
-                page_content=content,
-                metadata={"question": q, "answer": a, "file": f, "bucket": bucket}
+            docs[mode].append(
+                Document(
+                    page_content=content,
+                    metadata={"question": q, "answer": a, "file": f, "mode": mode},
+                )
             )
 
-            docs_by_mode["General"].append(doc)
-            docs_by_mode[bucket].append(doc)
-
-    vs_by_mode = {
-        "General": FAISS.from_documents(docs_by_mode["General"], emb) if docs_by_mode["General"] else None,
-        "Bayut": FAISS.from_documents(docs_by_mode["Bayut"], emb) if docs_by_mode["Bayut"] else None,
-        "Dubizzle": FAISS.from_documents(docs_by_mode["Dubizzle"], emb) if docs_by_mode["Dubizzle"] else None,
+    vs = {
+        m: (FAISS.from_documents(docs[m], emb) if docs[m] else None)
+        for m in ["General", "Bayut", "Dubizzle"]
     }
-
-    return {"vs": vs_by_mode, "docs": docs_by_mode, "qmap": qmap_by_mode}
+    return {"vs": vs, "docs": docs}
 
 # =====================================================
 # HEADER
@@ -304,7 +284,7 @@ with tool_cols[3]:
 st.markdown(f"<div class='mode-title'>{st.session_state.tool_mode} Assistant</div>", unsafe_allow_html=True)
 
 # =====================================================
-# ANSWER MODE BUTTONS (Ultra-Fast / Thinking)
+# ANSWER MODE BUTTONS
 # =====================================================
 mode_cols = st.columns([5, 2, 2, 5])
 with mode_cols[1]:
@@ -315,142 +295,86 @@ with mode_cols[2]:
         st.session_state.answer_mode = "Thinking"
 
 # =====================================================
-# REFRESH KNOWLEDGE BUTTON (NO “REBOOT”, JUST REINDEX)
-# - This updates immediately when you change TXT files.
+# REFRESH KNOWLEDGE (NO REDEPLOY, NO REBOOT)
 # =====================================================
 refresh_cols = st.columns([6, 2, 6])
 with refresh_cols[1]:
     refresh = st.button("Refresh Knowledge", use_container_width=True)
 
 fp = data_fingerprint()
-
 if refresh:
     st.cache_resource.clear()
 
-STORE = build_assets(fp)
+ASSETS = build_assets(fp)
 
-def pick_assets():
-    if not STORE:
-        return None, [], {}
+def pick_store_and_docs():
     mode = st.session_state.tool_mode
-    return STORE["vs"].get(mode), STORE["docs"].get(mode, []), STORE["qmap"].get(mode, {})
-
-st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+    return ASSETS["vs"].get(mode), ASSETS["docs"].get(mode, [])
 
 # =====================================================
-# INPUT
+# INPUT (FORM = nicer, no extra rerun while typing)
 # =====================================================
 st.markdown("<div class='ask-label'>Ask me Anything</div>", unsafe_allow_html=True)
-q = st.text_input("", label_visibility="collapsed", key="q_input")
 
-btn_cols = st.columns([1, 1])
-ask = btn_cols[0].button("Ask", use_container_width=True)
-clear = btn_cols[1].button("Clear chat", use_container_width=True)
+with st.form("ask_form", clear_on_submit=True):
+    q = st.text_input("", label_visibility="collapsed", key="q_input")
+    btn_cols = st.columns([1, 1])
+    ask = btn_cols[0].form_submit_button("Ask", use_container_width=True)
+    clear = btn_cols[1].form_submit_button("Clear chat", use_container_width=True)
 
 if clear:
     st.session_state.chat[st.session_state.tool_mode] = []
 
 # =====================================================
-# ANSWER (FIXED — CHATGPT STYLE)
-# - Greeting: fixed answer
-# - Exact Q match: always correct
-# - Entity Q: uses BOTH "full question" + "entity" search, aggregates facts
-# - Normal Q: semantic search over Q+A
-# IMPORTANT: no st.rerun() after ask
+# ANSWER (CHATGPT STYLE)
 # =====================================================
 if ask and q:
-    vs, docs_mode, qmap_mode = pick_assets()
-    qn = normalize(q)
+    vs, docs_mode = pick_store_and_docs()
     thinking = st.session_state.answer_mode == "Thinking"
 
-    # 1) Greeting
-    if is_greeting(q):
-        final = (
-            "Hi! 👋 I’m the Bayut & dubizzle Internal AI Assistant. "
-            "Ask your question and I’ll answer using the internal knowledge files."
-        )
-
-    # 2) Exact match (prevents wrong answers)
-    elif qn in qmap_mode:
-        final = qmap_mode[qn]
-
-    # 3) Entity question (who/what is X) — aggregate facts
-    elif is_entity_question(q):
-        if not vs:
-            final = "No internal Q&A data found."
-        else:
-            entity = extract_entity(q)
-            if not entity:
-                final = "Please specify the name or term you mean."
-            else:
-                ent = normalize(entity)
-                # allow first-name questions to match full names
-                variants = {ent}
-                parts = [p for p in ent.split(" ") if p]
-                if parts:
-                    variants.add(parts[0])
-                    variants.add(parts[-1])
-
-                # Search using BOTH the full question and the entity token (much better)
-                cand = []
-                try:
-                    cand += vs.similarity_search(q, k=20)
-                    cand += vs.similarity_search(entity, k=30)
-                except Exception:
-                    cand += vs.similarity_search(q, k=12)
-
-                # dedup docs by (file, question)
-                seen = set()
-                candidates = []
-                for d in cand:
-                    key = (d.metadata.get("file", ""), normalize(d.metadata.get("question", "")))
-                    if key not in seen:
-                        seen.add(key)
-                        candidates.append(d)
-
-                facts = []
-                for d in candidates:
-                    qq = d.metadata.get("question", "")
-                    aa = d.metadata.get("answer", "")
-                    if any(word_hit(qq, v) or word_hit(aa, v) for v in variants):
-                        facts.append(aa)
-
-                # fallback scan (fast, capped) if embeddings miss it
-                if not facts and docs_mode:
-                    hit = 0
-                    for d in docs_mode:
-                        qq = d.metadata.get("question", "")
-                        aa = d.metadata.get("answer", "")
-                        if any(word_hit(qq, v) or word_hit(aa, v) for v in variants):
-                            facts.append(aa)
-                            hit += 1
-                            if hit >= 8:
-                                break
-
-                merged = merge_unique(facts)
-
-                # If no facts, do NOT return random unrelated answer
-                if merged:
-                    final = merged
-                else:
-                    final = f"I couldn’t find information about “{entity}” in the internal knowledge files."
-
-    # 4) Normal question — semantic search (Q + A embedded)
+    if not docs_mode:
+        final = "No internal Q&A data found for this mode."
     else:
-        if not vs:
-            final = "No internal Q&A data found."
+        # Entity: "who is X" => search + scan answers for X
+        if is_entity_question(q):
+            entity = extract_entity(q)
+            ent = normalize(entity)
+
+            variants = {ent}
+            parts = [p for p in ent.split(" ") if p]
+            if parts:
+                variants.add(parts[0])      # first token
+                variants.add(parts[-1])     # last token
+
+            candidates = []
+            if vs:
+                candidates += vs.similarity_search(entity, k=30)
+                candidates += vs.similarity_search(q, k=20)
+
+            hits = []
+            pool = candidates if candidates else docs_mode
+            for d in pool:
+                qq = d.metadata.get("question", "")
+                aa = d.metadata.get("answer", "")
+                if any(token_in_text(qq, v) or token_in_text(aa, v) for v in variants):
+                    hits.append(aa)
+                if len(hits) >= 6:
+                    break
+
+            final = merge_unique(hits) if hits else f'I couldn’t find information about “{entity}” in this mode’s knowledge files.'
+
+        # Normal question => retrieve best answer
         else:
-            if thinking:
-                with st.spinner("Thinking…"):
-                    time.sleep(0.15)
-
-            results = vs.similarity_search(q, k=8 if thinking else 4)
-            answers = [r.metadata.get("answer") for r in results if r.metadata.get("answer")]
-
-            if not answers:
-                final = "No relevant answer found."
+            if not vs:
+                final = "No searchable index found for this mode."
             else:
-                final = answers[0] if not thinking else format_thinking_answer(answers[0], answers[1:])
+                if thinking:
+                    with st.spinner("Thinking…"):
+                        time.sleep(0.15)
+
+                results = vs.similarity_search(q, k=8 if thinking else 4)
+                answers = [r.metadata.get("answer") for r in results if r.metadata.get("answer")]
+                final = answers[0] if answers else "No relevant answer found."
 
     st.session_state.chat[st.session_state.tool_mode].append({"q": q, "a": final})
 
