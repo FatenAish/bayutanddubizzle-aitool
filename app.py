@@ -216,15 +216,17 @@ def kb_signature() -> str:
     return hashlib.sha256(raw.encode("utf-8", errors="ignore")).hexdigest()
 
 # =====================================================
-# BUILD STORES (STRICT PER MODE)
+# BUILD STORES (STRICT PER MODE) + KEEP ALL DOCS FOR SMART PERSON ANSWERS
 # =====================================================
 @st.cache_resource
 def build_stores(sig: str):
     if not os.path.isdir(DATA_DIR):
-        return None, None, None, {"General": 0, "Bayut": 0, "Dubizzle": 0}
+        empty_counts = {"General": 0, "Bayut": 0, "Dubizzle": 0}
+        empty_docs = {"General": [], "Bayut": [], "Dubizzle": []}
+        return None, None, None, empty_counts, empty_docs
 
     emb = get_embeddings()
-    docs = {"General": [], "Bayut": [], "Dubizzle": []}
+    docs_by_mode = {"General": [], "Bayut": [], "Dubizzle": []}
 
     for f in os.listdir(DATA_DIR):
         if not f.lower().endswith(".txt") or is_sop_file(f):
@@ -236,10 +238,11 @@ def build_stores(sig: str):
 
         for q, a in parse_qa_pairs(text):
             q = normalize_space(q)
-            a = a.strip()
-            # index BOTH Q + A (important)
+            a = (a or "").strip()
+
             content = f"Q: {q}\nA: {a}"
-            docs[bucket].append(
+
+            docs_by_mode[bucket].append(
                 Document(
                     page_content=content,
                     metadata={
@@ -251,94 +254,121 @@ def build_stores(sig: str):
                 )
             )
 
-    vs_general = FAISS.from_documents(docs["General"], emb) if docs["General"] else None
-    vs_bayut = FAISS.from_documents(docs["Bayut"], emb) if docs["Bayut"] else None
-    vs_dubizzle = FAISS.from_documents(docs["Dubizzle"], emb) if docs["Dubizzle"] else None
+    vs_general = FAISS.from_documents(docs_by_mode["General"], emb) if docs_by_mode["General"] else None
+    vs_bayut = FAISS.from_documents(docs_by_mode["Bayut"], emb) if docs_by_mode["Bayut"] else None
+    vs_dubizzle = FAISS.from_documents(docs_by_mode["Dubizzle"], emb) if docs_by_mode["Dubizzle"] else None
 
-    counts = {k: len(v) for k, v in docs.items()}
-    return vs_general, vs_bayut, vs_dubizzle, counts
+    counts = {k: len(v) for k, v in docs_by_mode.items()}
+    return vs_general, vs_bayut, vs_dubizzle, counts, docs_by_mode
 
 SIG = kb_signature()
-VS_GENERAL, VS_BAYUT, VS_DUBIZZLE, KB_COUNTS = build_stores(SIG)
+VS_GENERAL, VS_BAYUT, VS_DUBIZZLE, KB_COUNTS, DOCS_BY_MODE = build_stores(SIG)
 
 def pick_store():
     return {"General": VS_GENERAL, "Bayut": VS_BAYUT, "Dubizzle": VS_DUBIZZLE}[st.session_state.tool_mode]
 
 # =====================================================
-# CHATGPT-STYLE PERSON ANSWERS (NO LLM)
+# PERSON / ENTITY Qs (ChatGPT-style but rule-based)
 # =====================================================
 def extract_entity(query: str) -> Optional[str]:
     q = (query or "").strip()
     m = re.match(r"^\s*who\s+is\s+(.+?)\s*\?*\s*$", q, flags=re.I)
     if m:
         ent = m.group(1).strip()
-        if 1 <= len(ent.split()) <= 5:
+        if 1 <= len(ent.split()) <= 6:
             return ent
     return None
 
-def pick_name_line(answer: str, ent: str) -> List[str]:
-    ent_l = ent.lower()
-    lines = [ln.strip() for ln in (answer or "").splitlines() if ln.strip()]
-    hits = [ln for ln in lines if ent_l in ln.lower()]
-    return hits[:3]
+def _short_lines_containing(text: str, token: str) -> List[str]:
+    token_l = token.lower()
+    out = []
+    for ln in (text or "").splitlines():
+        s = ln.strip()
+        if not s:
+            continue
+        # avoid dumping Q/A labels or long blocks
+        if s.lower().startswith("q") or s.lower().startswith("a:"):
+            continue
+        if token_l in s.lower() and len(s) <= 160:
+            out.append(s)
+    # dedup keep order
+    ded = []
+    for x in out:
+        if x not in ded:
+            ded.append(x)
+    return ded
 
-def compose_person_answer(ent: str, docs: List[Document]) -> str:
+def compose_person_answer(ent: str, current_mode: str) -> str:
     ent_l = ent.lower().strip()
-    facts = []
 
-    # 1) Responsible for app
-    for d in docs:
-        q = (d.metadata.get("question") or "").lower()
-        a = d.metadata.get("answer") or ""
-        if "responsible for the app" in q and ent_l in a.lower():
-            facts.append(f"{a.strip().rstrip('.')}.")  # usually: "Faten Aish and Sarah Al Nawah"
+    # Scan ALL docs in current mode (not FAISS-only)
+    docs = DOCS_BY_MODE.get(current_mode, []) or []
 
-    # 2) Lines mentioning the person (roles)
-    role_lines = []
-    for d in docs:
-        a = d.metadata.get("answer") or ""
-        role_lines.extend(pick_name_line(a, ent))
+    # If nothing found in this mode, fallback to General (helps common info like owners)
+    fallback_docs = DOCS_BY_MODE.get("General", []) or []
+    scan_docs = docs + [d for d in fallback_docs if d not in docs]
 
-    # Dedup while preserving order
-    def dedup(seq):
-        out = []
-        for x in seq:
-            if x and x not in out:
-                out.append(x)
-        return out
+    full_name = None
+    responsible_answer = None
+    channel_handler = False
+    other_roles = []
 
-    facts = dedup(facts)
-    role_lines = dedup(role_lines)
+    for d in scan_docs:
+        q = (d.metadata.get("question") or "").strip()
+        a = (d.metadata.get("answer") or "").strip()
+        q_l = q.lower()
+        a_l = a.lower()
 
-    # Build nice text
-    name = ent.strip()
-    # If we have a full name somewhere, prefer it
-    for ln in role_lines:
-        m = re.search(r"([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})", ln)
-        if m:
-            name = m.group(1).strip()
-            break
+        # Owners / responsible for app
+        if "responsible for the app" in q_l or "who is responsible for the app" in q_l:
+            responsible_answer = a.strip().rstrip(".")
 
+        # Extract full name if present in any line mentioning entity
+        if ent_l in a_l:
+            # try to capture something like "Faten Aish"
+            m = re.search(r"([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2})", a)
+            if m:
+                full_name = full_name or m.group(1).strip()
+
+            if "channel handler" in a_l:
+                channel_handler = True
+
+            # Collect other short role lines
+            other_roles.extend(_short_lines_containing(a, ent))
+
+    name = full_name or ent.strip().title()
+
+    # Build a nice answer
     parts = []
-    if facts:
-        # Convert "X and Y" into natural sentence
-        if "and" in facts[0].lower() or "&" in facts[0]:
+
+    # Mention responsibility if the owners line includes this person
+    if responsible_answer and ent_l in responsible_answer.lower():
+        if "sarah" in responsible_answer.lower():
             parts.append(f"{name} is one of the people responsible for the app, together with Sarah Al Nawah.")
         else:
             parts.append(f"{name} is responsible for the app.")
+    elif responsible_answer and ("faten" in ent_l or "sarah" in ent_l):
+        # still helpful even if it didn't match substring perfectly
+        parts.append(f"The app is managed by {responsible_answer}.")
 
-    # Channel Handler / roles
-    # Try to detect "Channel Handler" style
-    joined = " ".join(role_lines).lower()
-    if "channel handler" in joined:
-        parts.append("She also acts as the Channel Handler for corrections and updates (content coordination).")
+    if channel_handler:
+        parts.append(f"She also acts as the Channel Handler for corrections and updates (content coordination).")
 
-    # If we still have nothing, fallback to best matching line
-    if not parts and role_lines:
-        parts.append(role_lines[0].rstrip(".") + ".")
+    # If you add a role later (e.g., “Senior Content Specialist”), it will show here naturally
+    role_text = " ".join(other_roles).lower()
+    if "senior" in role_text or "specialist" in role_text:
+        # keep it clean: take the first role line that contains it
+        for ln in other_roles:
+            lnl = ln.lower()
+            if "senior" in lnl or "specialist" in lnl:
+                parts.append(ln.rstrip(".") + ".")
+                break
 
+    # If still empty, fallback to best short role line (not a giant dump)
     if not parts:
-        return f"I couldn’t find clear information about “{ent}” in the internal knowledge files."
+        if other_roles:
+            return other_roles[0].rstrip(".") + "."
+        return f"I couldn’t find clear information about “{ent}” in the internal knowledge files for this mode."
 
     return " ".join(parts)
 
@@ -349,41 +379,24 @@ def answer_from_store(user_q: str, vs):
     thinking = st.session_state.answer_mode == "Thinking"
     if thinking:
         with st.spinner("Thinking…"):
-            time.sleep(0.12)
+            time.sleep(0.10)
 
     ent = extract_entity(user_q)
+    if ent:
+        return compose_person_answer(ent, st.session_state.tool_mode)
 
-    # Use with_score if available (but always return docs even if not)
+    # Normal Q/A: FAISS retrieval
     docs = []
     try:
-        hits = vs.similarity_search_with_score(user_q, k=12 if thinking else 8)
+        hits = vs.similarity_search_with_score(user_q, k=10 if thinking else 6)
         docs = [d for d, _s in hits]
-        if ent:
-            hits2 = vs.similarity_search_with_score(ent, k=12 if thinking else 8)
-            docs.extend([d for d, _s in hits2])
     except Exception:
-        docs = vs.similarity_search(user_q, k=12 if thinking else 8)
-        if ent:
-            docs.extend(vs.similarity_search(ent, k=12 if thinking else 8))
-
-    # Dedup docs
-    seen = set()
-    uniq = []
-    for d in docs:
-        key = (d.metadata.get("source_file"), d.metadata.get("question"))
-        if key not in seen:
-            seen.add(key)
-            uniq.append(d)
-    docs = uniq
+        docs = vs.similarity_search(user_q, k=10 if thinking else 6)
 
     if not docs:
         return "No relevant answer found."
 
-    # Person question → compose nice answer
-    if ent:
-        return compose_person_answer(ent, docs)
-
-    # Normal Q/A → top answer (and in Thinking mode: add 2 more)
+    # pick top unique answers
     answers = []
     for d in docs:
         a = (d.metadata.get("answer") or "").strip()
@@ -396,8 +409,7 @@ def answer_from_store(user_q: str, vs):
     if not thinking:
         return answers[0]
 
-    out = [answers[0]] + answers[1:3]
-    return "\n\n".join(out)
+    return "\n\n".join(answers[:3])
 
 # =====================================================
 # HEADER
@@ -432,8 +444,10 @@ with tool_cols[3]:
 
 st.markdown(f"<div class='mode-title'>{st.session_state.tool_mode} Assistant</div>", unsafe_allow_html=True)
 
-# Small (quiet) debug line so you KNOW data is loaded
-st.caption(f"Loaded Q&A: General {KB_COUNTS.get('General',0)} • Bayut {KB_COUNTS.get('Bayut',0)} • dubizzle {KB_COUNTS.get('Dubizzle',0)}")
+# Quiet debug
+st.caption(
+    f"Loaded Q&A: General {KB_COUNTS.get('General',0)} • Bayut {KB_COUNTS.get('Bayut',0)} • dubizzle {KB_COUNTS.get('Dubizzle',0)}"
+)
 
 # =====================================================
 # ANSWER MODE + REFRESH KNOWLEDGE
@@ -467,7 +481,7 @@ if clear_btn:
     st.rerun()
 
 # =====================================================
-# ASK HANDLER (THIS FIXES: "press ask nothing shows")
+# ASK HANDLER
 # =====================================================
 if ask_btn:
     if not (q or "").strip():
