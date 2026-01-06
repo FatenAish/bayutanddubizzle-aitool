@@ -285,4 +285,151 @@ st.markdown(
     <div id="brand-header">
       <div id="brand-title">
         <span style="color:#0E8A6D;">Bayut</span> &
-        <span style
+        <span style="color:#D71920;">dubizzle</span>
+        AI Content Assistant
+      </div>
+      <div id="brand-subtitle">Your Internal AI Assistant</div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+# =====================================================
+# TOOL MODE BUTTONS
+# =====================================================
+tool_cols = st.columns([2, 3, 3, 3, 2])
+with tool_cols[1]:
+    if st.button("General", use_container_width=True):
+        st.session_state.tool_mode = "General"
+with tool_cols[2]:
+    if st.button("Bayut", use_container_width=True):
+        st.session_state.tool_mode = "Bayut"
+with tool_cols[3]:
+    if st.button("dubizzle", use_container_width=True):
+        st.session_state.tool_mode = "Dubizzle"
+
+st.markdown(f"<div class='mode-title'>{st.session_state.tool_mode} Assistant</div>", unsafe_allow_html=True)
+
+# =====================================================
+# ANSWER MODE BUTTONS (Ultra-Fast / Thinking)
+# =====================================================
+mode_cols = st.columns([5, 2, 2, 5])
+with mode_cols[1]:
+    if st.button("Ultra-Fast", use_container_width=True):
+        st.session_state.answer_mode = "Ultra-Fast"
+with mode_cols[2]:
+    if st.button("Thinking", use_container_width=True):
+        st.session_state.answer_mode = "Thinking"
+
+st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+
+# =====================================================
+# INPUT (FORCED LABEL: Ask me Anything in bold)
+# NOTE: No st.rerun() on Ask anymore.
+# =====================================================
+st.markdown("<div class='ask-label'>Ask me Anything</div>", unsafe_allow_html=True)
+
+# Using a form prevents extra reruns from typing; it only reruns on submit.
+with st.form("ask_form", clear_on_submit=True):
+    q = st.text_input("", label_visibility="collapsed", key="q_input")
+    btn_cols = st.columns([1, 1])
+    ask = btn_cols[0].form_submit_button("Ask", use_container_width=True)
+    clear = btn_cols[1].form_submit_button("Clear chat", use_container_width=True)
+
+# Clear (NO st.rerun() needed)
+if clear:
+    st.session_state.chat[st.session_state.tool_mode] = []
+
+# =====================================================
+# ANSWER (FIXED LOGIC: no random wrong answers)
+# =====================================================
+if ask and q:
+    vs, docs_mode, qmap_mode = pick_assets()
+
+    qn = normalize(q)
+    thinking = st.session_state.answer_mode == "Thinking"
+
+    # 1) Greeting -> fixed response
+    if is_greeting(q):
+        final = (
+            "Hi! 👋 I’m the Bayut & dubizzle Internal AI Assistant. "
+            "Ask your question and I’ll answer using the internal knowledge files."
+        )
+
+    # 2) Exact question match (prevents wrong FAISS hits)
+    elif qn in qmap_mode:
+        final = qmap_mode[qn]
+
+    # 3) Entity question -> ONLY answer if we actually find facts about that entity
+    elif is_entity_question(q):
+        if not vs:
+            final = "No internal Q&A data found."
+        else:
+            entity = extract_entity(q)
+            if not entity:
+                final = "Please specify the name or term you mean."
+            else:
+                # pull candidates by semantic search
+                candidates = vs.similarity_search(entity, k=25)
+                facts = []
+                ent = normalize(entity)
+
+                for d in candidates:
+                    ans = d.metadata.get("answer", "")
+                    qq = d.metadata.get("question", "")
+                    if ent and (ent in normalize(ans) or ent in normalize(qq)):
+                        facts.append(ans)
+
+                # If still empty, do a light scan of the mode docs (fast, capped)
+                if not facts and docs_mode:
+                    hit = 0
+                    for d in docs_mode:
+                        ans = d.metadata.get("answer", "")
+                        qq = d.metadata.get("question", "")
+                        if ent and (ent in normalize(ans) or ent in normalize(qq)):
+                            facts.append(ans)
+                            hit += 1
+                            if hit >= 8:
+                                break
+
+                merged = safe_merge_facts(facts)
+
+                # IMPORTANT: If no facts, do NOT fallback to random answers.
+                if merged:
+                    final = merged
+                else:
+                    final = f"I couldn’t find information about “{entity}” in the internal knowledge files."
+
+    # 4) Normal question -> semantic search, but with better embeddings (Q+A)
+    else:
+        if not vs:
+            final = "No internal Q&A data found."
+        else:
+            if thinking:
+                with st.spinner("Thinking…"):
+                    time.sleep(0.15)
+
+            results = vs.similarity_search(q, k=8 if thinking else 4)
+            answers = [r.metadata.get("answer") for r in results if r.metadata.get("answer")]
+
+            if not answers:
+                final = "No relevant answer found."
+            else:
+                final = answers[0] if not thinking else format_thinking_answer(answers[0], answers[1:])
+
+    # Save in chat (NO st.rerun())
+    st.session_state.chat[st.session_state.tool_mode].append({"q": q, "a": final})
+
+# =====================================================
+# CHAT HISTORY (ANSWER bubble changes by mode: gray/green/red)
+# =====================================================
+answer_class = {
+    "General": "a-general",
+    "Bayut": "a-bayut",
+    "Dubizzle": "a-dubizzle",
+}[st.session_state.tool_mode]
+
+for item in reversed(st.session_state.chat[st.session_state.tool_mode]):
+    st.markdown(f"<div class='q-bubble'>{br(item['q'])}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='a-bubble {answer_class}'>{br(item['a'])}</div>", unsafe_allow_html=True)
+    st.markdown("---")
