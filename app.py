@@ -36,30 +36,37 @@ st.markdown(
         padding-bottom: 2rem !important;
       }
 
+      /* QUESTION BUBBLES */
       .q-bubble{
-        padding: 10px 14px;
-        border-radius: 14px;
+        padding: 12px 16px;
+        border-radius: 16px;
         max-width: 85%;
         width: fit-content;
         font-weight: 600;
-        margin: 10px 0 8px;
+        margin: 12px 0 8px;
         border: 1px solid rgba(0,0,0,0.06);
       }
+
       .q-general { background:#f2f2f2; }
       .q-bayut { background:#e6f4ef; }
       .q-dubizzle { background:#fdeaea; }
 
+      /* ANSWER */
       .answer{
         margin-left: 6px;
-        margin-bottom: 14px;
-        line-height: 1.6;
+        margin-bottom: 18px;
+        line-height: 1.7;
       }
 
-      div.stButton > button { border-radius: 10px; }
+      /* INPUT LABEL */
+      label[data-testid="stTextInputLabel"]{
+        font-weight: 700;
+      }
 
-      .small-btn div.stButton > button{
-        padding: 0.4rem 0 !important;
-        font-size: 0.95rem !important;
+      /* BUTTONS */
+      div.stButton > button {
+        border-radius: 12px;
+        font-weight: 600;
       }
     </style>
     """,
@@ -158,9 +165,12 @@ st.markdown(
     """
     <h1 class="center">
       <span style="color:#0E8A6D;">Bayut</span> &
-      <span style="color:#D71920;">Dubizzle</span> AI Content Assistant
+      <span style="color:#D71920;">dubizzle</span> AI Content Assistant
     </h1>
-    <p class="center">Internal AI Assistant</p>
+
+    <p class="center" style="font-size:1.05rem; margin-top:-6px;">
+      Your Internal AI Assistant
+    </p>
     """,
     unsafe_allow_html=True
 )
@@ -200,7 +210,7 @@ st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
 # =====================================================
 # INPUT
 # =====================================================
-q = st.text_input("Type your question here…")
+q = st.text_input("Ask me Anything!")
 
 btn_cols = st.columns([1, 1])
 ask = btn_cols[0].button("Ask", use_container_width=True)
