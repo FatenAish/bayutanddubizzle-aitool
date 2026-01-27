@@ -63,6 +63,23 @@ def _find_txt_dir(root, max_depth=3):
     return None
 
 
+def _get_openai_api_key():
+    api_key = os.getenv("OPENAI_API_KEY")
+    if api_key:
+        return api_key
+    try:
+        return st.secrets.get("OPENAI_API_KEY")
+    except Exception:
+        return None
+
+
+def _get_embeddings_client():
+    api_key = _get_openai_api_key()
+    if not api_key:
+        return None
+    return OpenAIEmbeddings(api_key=api_key)
+
+
 def resolve_data_dir():
     env_dir = os.getenv("DATA_DIR")
     if env_dir and _has_txt_files(env_dir):
@@ -181,6 +198,10 @@ def build_faiss_index():
     """
     Build a FAISS vector index from Q/A pairs in .txt files.
     """
+    embeddings = _get_embeddings_client()
+    if embeddings is None:
+        return False
+
     txt_files = _list_txt_files(DATA_DIR)
     if not txt_files:
         return False
@@ -198,7 +219,6 @@ def build_faiss_index():
             for pair in qa_pairs
         ]
 
-        embeddings = OpenAIEmbeddings()
         vector_store = FAISS.from_texts(texts, embeddings, metadatas=metadatas)
         vector_store.save_local(INDEX_PATH)
         return True
@@ -213,7 +233,6 @@ def build_faiss_index():
     for chunk in chunks:
         chunk.metadata["mode"] = "chunk"
 
-    embeddings = OpenAIEmbeddings()
     vector_store = FAISS.from_documents(chunks, embeddings)
     vector_store.save_local(INDEX_PATH)
     return True
@@ -223,9 +242,11 @@ def load_index():
     """
     Load FAISS index if exists.
     """
+    embeddings = _get_embeddings_client()
+    if embeddings is None:
+        return None
     if not os.path.exists(INDEX_PATH):
         return None
-    embeddings = OpenAIEmbeddings()
     return FAISS.load_local(INDEX_PATH, embeddings, allow_dangerous_deserialization=True)
 
 
@@ -233,6 +254,9 @@ def rag_query(question):
     """
     Retrieve a matching answer directly from the files.
     """
+    if _get_openai_api_key() is None:
+        return "Missing OPENAI_API_KEY. Add it in Streamlit secrets or environment variables."
+
     index = load_index()
     if index is None:
         return "Index missing. Please rebuild the index."
@@ -310,12 +334,15 @@ if mode == "General":
 
     # Rebuild index button
     if st.button("Rebuild Index"):
-        with st.spinner("Rebuilding FAISS index..."):
-            success = build_faiss_index()
-            if success:
-                st.success("Index rebuilt successfully! Refresh page.")
-            else:
-                st.error(f"No .txt files found in {DATA_DIR} folder.")
+        if _get_openai_api_key() is None:
+            st.error("Missing OPENAI_API_KEY. Add it in Streamlit secrets or environment variables.")
+        else:
+            with st.spinner("Rebuilding FAISS index..."):
+                success = build_faiss_index()
+                if success:
+                    st.success("Index rebuilt successfully! Refresh page.")
+                else:
+                    st.error(f"No .txt files found in {DATA_DIR} folder.")
 
 elif mode == "Bayut":
     st.markdown("<h2 style='color:#0E8A6D;'>Bayut Module (coming soon)</h2>", unsafe_allow_html=True)
