@@ -5,6 +5,8 @@ import difflib
 import streamlit as st
 
 from langchain_community.vectorstores import FAISS
+from langchain_community.document_loaders import TextLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
 
 
@@ -36,10 +38,17 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-def _has_txt_files(path):
+def _list_txt_files(path):
     if not os.path.isdir(path):
-        return False
-    return any(name.endswith(".txt") for name in os.listdir(path))
+        return []
+    return [
+        name for name in os.listdir(path)
+        if name.lower().endswith(".txt")
+    ]
+
+
+def _has_txt_files(path):
+    return len(_list_txt_files(path)) > 0
 
 
 def _find_txt_dir(root, max_depth=3):
@@ -49,7 +58,7 @@ def _find_txt_dir(root, max_depth=3):
         if depth > max_depth:
             dirnames[:] = []
             continue
-        if any(name.endswith(".txt") for name in filenames):
+        if any(name.lower().endswith(".txt") for name in filenames):
             return dirpath
     return None
 
@@ -83,7 +92,7 @@ def resolve_data_dir():
 DATA_DIR = resolve_data_dir()
 INDEX_PATH = os.path.join(DATA_DIR, "qa_faiss_index")
 
-QUESTION_PATTERN = re.compile(r"^\s*Q\s*\d+\s*[-\u2013:]\s*(.+)$", re.IGNORECASE)
+QUESTION_PATTERN = re.compile(r"^\s*Q\s*\d+\s*[\)\.\-:\u2013\u2014]\s*(.+)$", re.IGNORECASE)
 BULLET_PATTERN = re.compile(r"^\s*[\u2022\u25cf]\s*")
 MIN_MATCH_SCORE = 0.35
 
@@ -159,7 +168,7 @@ def parse_qa_pairs(text, source_name):
 def load_qa_pairs():
     if not os.path.isdir(DATA_DIR):
         return []
-    files = [f for f in os.listdir(DATA_DIR) if f.endswith(".txt")]
+    files = _list_txt_files(DATA_DIR)
     pairs = []
     for filename in files:
         path = os.path.join(DATA_DIR, filename)
@@ -172,18 +181,40 @@ def build_faiss_index():
     """
     Build a FAISS vector index from Q/A pairs in .txt files.
     """
-    qa_pairs = load_qa_pairs()
-    if not qa_pairs:
+    txt_files = _list_txt_files(DATA_DIR)
+    if not txt_files:
         return False
 
-    texts = [pair["question"] for pair in qa_pairs]
-    metadatas = [
-        {"question": pair["question"], "answer": pair["answer"], "source": pair["source"]}
-        for pair in qa_pairs
-    ]
+    qa_pairs = load_qa_pairs()
+    if qa_pairs:
+        texts = [pair["question"] for pair in qa_pairs]
+        metadatas = [
+            {
+                "question": pair["question"],
+                "answer": pair["answer"],
+                "source": pair["source"],
+                "mode": "qa",
+            }
+            for pair in qa_pairs
+        ]
+
+        embeddings = OpenAIEmbeddings()
+        vector_store = FAISS.from_texts(texts, embeddings, metadatas=metadatas)
+        vector_store.save_local(INDEX_PATH)
+        return True
+
+    documents = []
+    for filename in txt_files:
+        loader = TextLoader(os.path.join(DATA_DIR, filename))
+        documents.extend(loader.load())
+
+    splitter = RecursiveCharacterTextSplitter(chunk_size=1200, chunk_overlap=200)
+    chunks = splitter.split_documents(documents)
+    for chunk in chunks:
+        chunk.metadata["mode"] = "chunk"
 
     embeddings = OpenAIEmbeddings()
-    vector_store = FAISS.from_texts(texts, embeddings, metadatas=metadatas)
+    vector_store = FAISS.from_documents(chunks, embeddings)
     vector_store.save_local(INDEX_PATH)
     return True
 
@@ -207,23 +238,29 @@ def rag_query(question):
         return "Index missing. Please rebuild the index."
 
     results = index.similarity_search(question, k=5)
-    best_doc = None
-    best_score = 0.0
-    for doc in results:
-        candidate_question = doc.metadata.get("question", doc.page_content)
-        score = similarity_score(question, candidate_question)
-        if score > best_score:
-            best_score = score
-            best_doc = doc
-
-    if best_doc is None or best_score < MIN_MATCH_SCORE:
+    if not results:
         return "I couldn't find a matching answer in the files."
 
-    answer = best_doc.metadata.get("answer")
-    if not answer:
-        return "I couldn't find a matching answer in the files."
+    if results[0].metadata.get("mode") == "qa":
+        best_doc = None
+        best_score = 0.0
+        for doc in results:
+            candidate_question = doc.metadata.get("question", doc.page_content)
+            score = similarity_score(question, candidate_question)
+            if score > best_score:
+                best_score = score
+                best_doc = doc
 
-    return answer
+        if best_doc is None or best_score < MIN_MATCH_SCORE:
+            return "I couldn't find a matching answer in the files."
+
+        answer = best_doc.metadata.get("answer")
+        if not answer:
+            return "I couldn't find a matching answer in the files."
+
+        return answer
+
+    return format_answer(results[0].page_content)
 
 
 # =========================================
