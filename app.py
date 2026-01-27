@@ -36,7 +36,51 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-DATA_DIR = "/app/data"
+def _has_txt_files(path):
+    if not os.path.isdir(path):
+        return False
+    return any(name.endswith(".txt") for name in os.listdir(path))
+
+
+def _find_txt_dir(root, max_depth=3):
+    root = os.path.abspath(root)
+    for dirpath, dirnames, filenames in os.walk(root):
+        depth = dirpath[len(root):].count(os.sep)
+        if depth > max_depth:
+            dirnames[:] = []
+            continue
+        if any(name.endswith(".txt") for name in filenames):
+            return dirpath
+    return None
+
+
+def resolve_data_dir():
+    env_dir = os.getenv("DATA_DIR")
+    if env_dir and _has_txt_files(env_dir):
+        return env_dir
+
+    preferred = "/app/data"
+    alt_root = "/data"
+    local_dir = os.path.join(os.path.dirname(__file__), "data")
+    cwd_dir = os.path.join(os.getcwd(), "data")
+    candidates = [preferred, alt_root, local_dir, cwd_dir]
+    for candidate in candidates:
+        if _has_txt_files(candidate):
+            return candidate
+
+    search_roots = [os.path.dirname(__file__), os.getcwd()]
+    for root in search_roots:
+        found = _find_txt_dir(root)
+        if found:
+            return found
+
+    for candidate in candidates:
+        if os.path.isdir(candidate):
+            return candidate
+    return preferred
+
+
+DATA_DIR = resolve_data_dir()
 INDEX_PATH = os.path.join(DATA_DIR, "qa_faiss_index")
 
 QUESTION_PATTERN = re.compile(r"^\s*Q\s*\d+\s*[-\u2013:]\s*(.+)$", re.IGNORECASE)
@@ -197,7 +241,7 @@ st.markdown(f"""
     color:#444;
     font-size:16px;
     margin-bottom:15px;">
-    📁 <b>DATA DIR:</b> /app/data <br>
+    📁 <b>DATA DIR:</b> {DATA_DIR} <br>
     {'🟢 Index is ready.' if index_exists else '🟡 No index found — add .txt files and click Rebuild Index.'}
 </div>
 """, unsafe_allow_html=True)
@@ -234,7 +278,7 @@ if mode == "General":
             if success:
                 st.success("Index rebuilt successfully! Refresh page.")
             else:
-                st.error("No .txt files found in /data folder.")
+                st.error(f"No .txt files found in {DATA_DIR} folder.")
 
 elif mode == "Bayut":
     st.markdown("<h2 style='color:#0E8A6D;'>Bayut Module (coming soon)</h2>", unsafe_allow_html=True)
