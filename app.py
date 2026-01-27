@@ -210,31 +210,22 @@ st.markdown(f"""
 if mode == "General":
     st.subheader("Ask your internal question")
 
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
+    question = st.text_input("Question")
 
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
-
-    prompt = st.chat_input("Ask a question")
-    if prompt:
-        prompt = prompt.strip()
-        if not prompt:
-            st.warning("Please enter a question.")
+    if st.button("Ask"):
+        if not index_exists:
+            st.error("⚠ Please rebuild index first.")
         else:
-            st.session_state.messages.append({"role": "user", "content": prompt})
-            with st.chat_message("user"):
-                st.markdown(prompt)
-
-            if not index_exists:
-                response = "Please rebuild index first."
-            else:
-                response = rag_query(prompt)
-
-            with st.chat_message("assistant"):
-                st.markdown(response)
-            st.session_state.messages.append({"role": "assistant", "content": response})
+            answer = rag_query(question)
+            st.markdown(
+                f"""
+                <div style='background:#F7F7F7; padding:15px;
+                border-radius:8px; border:1px solid #DDD; margin-top:15px;'>
+                    <b>Answer:</b><br>{answer}
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
 
     # Rebuild index button
     if st.button("Rebuild Index"):
@@ -243,7 +234,7 @@ if mode == "General":
             if success:
                 st.success("Index rebuilt successfully! Refresh page.")
             else:
-                st.error("No Q&A pairs found in .txt files.")
+                st.error("No .txt files found in /data folder.")
 
 elif mode == "Bayut":
     st.markdown("<h2 style='color:#0E8A6D;'>Bayut Module (coming soon)</h2>", unsafe_allow_html=True)
